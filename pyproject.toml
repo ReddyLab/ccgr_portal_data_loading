@@ -1,0 +1,24 @@
+[project]
+name = "CCGRDataUtilities"
+authors = [{ name = "Thomas Cowart", email = "thomas.cowart@duke.edu" }]
+description = "Various utilities for compiling and validating data for the CCGR Portal"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT License" }
+classifiers = ["Programming Language :: Python :: 3"]
+dependencies = ["requests>=2.32", "jsonschema>=4.22"]
+version = "1.0"
+
+[project.scripts]
+ccgr_av = "data_utilities.analysis_validation:run_cli"
+ccgr_ev = "data_utilities.experiment_validation:run_cli"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+addopts = ["--import-mode=importlib"]
+pythonpath = ["src"]
+
+[tool.black]
+line-length = 120
