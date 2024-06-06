@@ -1,0 +1,57 @@
+{
+  "$id": "https://ccgr-portal.dhs.duke.edu/analysis.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Analysis Metadata",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "source type": {
+      "type": "string",
+      "enum": ["DHS", "gRNA"]
+    },
+    "genome_assembly": {
+      "type": "string",
+      "enum": ["GRCh37", "GRCh38"]
+    },
+    "p_val_adj_method": {
+      "type": "string"
+    },
+    "p_val_threshold": {
+      "type": "number"
+    },
+    "results": {
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "filename": { "type": "string" },
+        "file_location": { "type": "string" }
+      }
+    },
+    "misc_files": {
+      "type": "array",
+      "items": {
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "filename": { "type": "string" },
+          "file_location": { "type": "string" },
+          "genome_assembly": {
+            "type": "string",
+            "enum": ["GRCh37", "GRCh38"]
+          }
+        }
+      }
+    },
+    "data_format": {
+      "type": "string",
+      "enum": ["standard", "jesse-engreitz"]
+    }
+  }
+}

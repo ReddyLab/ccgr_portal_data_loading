@@ -12,9 +12,13 @@ version = "1.0"
 [project.scripts]
 ccgr_av = "data_utilities.analysis_validation:run_cli"
 ccgr_ev = "data_utilities.experiment_validation:run_cli"
+ccgr_mv = "data_utilities.metadata_validation:run_cli"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+data_utilities = ["*.schema.json"]
 
 [tool.pytest.ini_options]
 addopts = ["--import-mode=importlib"]
@@ -22,3 +26,6 @@ pythonpath = ["src"]
 
 [tool.black]
 line-length = 120
+
+[tool.isort]
+profile = "black"

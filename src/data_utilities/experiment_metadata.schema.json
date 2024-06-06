@@ -1,0 +1,87 @@
+{
+  "$id": "https://ccgr-portal.dhs.duke.edu/experiment.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Experiment Metadata",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "biosamples": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "cell_type": {
+            "type": "string"
+          },
+          "tissue_type": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "assay": {
+      "type": "string",
+      "enum": [
+        "scCERES",
+        "wgCERES",
+        "ATAC-STARR-seq",
+        "Flow-FISH CRISPR screen"
+      ]
+    },
+    "source type": {
+      "type": "string",
+      "enum": ["DHS", "gRNA"]
+    },
+    "parent source type": {
+      "type": "string",
+      "enum": ["DHS", "gRNA"]
+    },
+    "year": {
+      "type": "string"
+    },
+    "experimentalist": {
+      "type": "string"
+    },
+    "PI": {
+      "type": "string"
+    },
+    "tested_elements_file": {
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "filename": { "type": "string" },
+        "file_location": { "type": "string" },
+        "genome_assembly": {
+          "type": "string",
+          "enum": ["GRCh37", "GRCh38"]
+        }
+      }
+    },
+    "misc_files": {
+      "type": "array",
+      "items": {
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "filename": { "type": "string" },
+          "file_location": { "type": "string" },
+          "genome_assembly": {
+            "type": "string",
+            "enum": ["GRCh37", "GRCh38"]
+          }
+        }
+      }
+    },
+    "data_format": {
+      "type": "string",
+      "enum": ["standard", "jesse-engreitz"]
+    }
+  }
+}
