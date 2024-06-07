@@ -1,5 +1,4 @@
-#!/usr/bin/env python
-
+import argparse
 import json
 import os.path
 from datetime import datetime
@@ -7,7 +6,7 @@ from pathlib import Path
 
 # These experiments have bad data -- the files are the wrong format
 # and don't contain all the necessary information for
-BAD_EXPERIMENTS = {
+BAD_ENGREITZ_EXPERIMENTS = {
     "ENCSR108MPF",
     "ENCSR144TTP",
     "ENCSR194SMN",
@@ -19,20 +18,41 @@ BAD_EXPERIMENTS = {
     "ENCSR525DAZ",
     "ENCSR810OLG",
 }
-GRCH38 = "GRCh38"
-GRCH37 = "GRCh37"
-GRCH38_ASSEMBLIES = {GRCH38, "hg38"}
-GRCH37_ASSEMBLIES = {GRCH37, "hg19"}
-TISSUE_TYPES = {
-    "iPSC": "Stem",
-    "K562": "Bone Marrow",
-    "NPC": "Stem",
-    "CD8": "T Cell",
-    "GM12878": "B Cell",
-    "BJAB": "B Cell",
-    "THP-1": "Blood Cell",
-    "Jurkat": "T Cell",
+GOOD_ENGREITZ_EXPERIMENTS = {
+    "ENCSR006WCB",
+    "ENCSR019BVO",
+    "ENCSR020TLT",
+    "ENCSR029BRD",
+    "ENCSR101JKC",
+    "ENCSR114BIZ",
+    "ENCSR116BPW",
+    "ENCSR138CXY",
+    "ENCSR154GRV",
+    "ENCSR176XPW",
+    "ENCSR245NIU",
+    "ENCSR245ZZP",
+    "ENCSR306ZVG",
+    "ENCSR324QDY",
+    "ENCSR336WSZ",
+    "ENCSR532VIG",
+    "ENCSR541HXR",
+    "ENCSR617XYY",
+    "ENCSR661PUY",
+    "ENCSR752CCF",
+    "ENCSR760TSA",
+    "ENCSR858PBD",
+    "ENCSR876DIL",
+    "ENCSR884HBT",
+    "ENCSR884XXE",
+    "ENCSR898QMI",
+    "ENCSR905FEH",
+    "ENCSR905MSH",
+    "ENCSR922PHL",
+    "ENCSR954IYH",
 }
+GRCH37 = "GRCh37"
+GRCH37_ASSEMBLIES = {GRCH37, "hg19"}
+TISSUE_TYPES = {"K562": "Bone Marrow"}
 
 
 def first(iterable, test):
@@ -85,7 +105,6 @@ def build_experiment(screen_info):
 
     cell_line = screen_info["biosample_ontology"][0]["term_name"]
     tissue_type = TISSUE_TYPES[cell_line]
-    gene = screen_info["examined_loci"][0]["gene"]["symbol"]
     crispr = screen_info["related_datasets"][0]["perturbation_type"]
 
     create_date = datetime.fromisoformat(screen_info["date_created"])
@@ -104,7 +123,7 @@ def build_experiment(screen_info):
 
     # CRISPRi Flow-FISH screen of multiple loci in K562 with PrimeFlow readout of PQBP1
     experiment = {
-        "name": f"{crispr} {screen_info['assay_title'][0]} in {cell_line} for {gene} ({screen_info['accession']})",
+        "name": f"{crispr} {screen_info['assay_title'][0]} in {cell_line}",
         "description": screen_info.get("biosample_summary"),
         "biosamples": [{"cell_type": cell_line, "tissue_type": tissue_type}],
         "assay": screen_info["assay_title"][0],
@@ -209,7 +228,7 @@ def gen_metadata():
         with open(file, encoding="utf-8") as f:
             screen = json.load(f)
 
-        if screen["accession"] in BAD_EXPERIMENTS:
+        if screen["accession"] not in GOOD_ENGREITZ_EXPERIMENTS:
             continue
 
         experiments.append((file, screen))
@@ -219,9 +238,6 @@ def gen_metadata():
     classifications = set()
 
     for file3, screen3 in experiments:
-        if screen3["lab"]["name"] != "jesse-engreitz":
-            continue
-
         classifications.add(screen3["biosample_ontology"][0]["classification"])
         biosamples.add(screen3["biosample_ontology"][0]["term_name"])
         screens.add(screen3["assay_term_name"][0])
@@ -241,5 +257,12 @@ def gen_metadata():
     print(screens)
 
 
-if __name__ == "__main__":
+def get_args():
+    parser = argparse.ArgumentParser(description="")
+
+    return parser.parse_args()
+
+
+def run_cli():
+    args = get_args
     gen_metadata()
