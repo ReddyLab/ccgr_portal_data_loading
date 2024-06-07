@@ -1,9 +1,11 @@
-# CCGR Portal Data Generation
+# CCGR Portal Data Generation, Validation and Loading
 
-This repository contains the scripts to generate portal data from public sources. The scripts need to
+This repository contains the scripts to generate portal data from public sources, validate said data, and load it (or any other valid data) into in the portal. The generation scripts need to
 
 - Generate experiment and analysis metadata
 - Download the data itself (potentially)
 - Modify the data to match the portal format (potentially)
 
-Portal admins can then use a [script included with the portal](https://github.com/ReddyLab/cegs-portal/blob/main/scripts/data_loading/bulk_upload.py) to upload the data to their portal.
+The generated data (or any data) can be validated to work with the portal using the `ccgr_ev`, `ccgr_av`, and `ccgr_mv` scripts.
+
+Portal admins can then use the `ccgr_ul` command to upload data to their portal.

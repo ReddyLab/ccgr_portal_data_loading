@@ -10,6 +10,7 @@ dependencies = ["requests>=2.32", "jsonschema>=4.22"]
 version = "1.0"
 
 [project.scripts]
+ccgr_ul = "data_utilities.bulk_upload:run_cli"
 ccgr_av = "data_utilities.analysis_validation:run_cli"
 ccgr_ev = "data_utilities.experiment_validation:run_cli"
 ccgr_mv = "data_utilities.metadata_validation:run_cli"
