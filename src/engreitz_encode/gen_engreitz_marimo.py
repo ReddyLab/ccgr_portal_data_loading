@@ -11,12 +11,13 @@ def __():
     from datetime import datetime
     from itertools import chain
     from pathlib import Path
+
     return Path, chain, datetime, json, os
 
 
 @app.cell
 def __(Path):
-    curr_dir = Path("./series_data")
+    curr_dir = Path("./temp_data")
     json_files = list(curr_dir.glob("*.json"))
 
     GRCH38 = "GRCh38"
@@ -59,7 +60,8 @@ def __():
         for x in iterable:
             if test(x):
                 return x
-    return first,
+
+    return (first,)
 
 
 @app.cell
@@ -71,13 +73,23 @@ def __(GRCH37, GRCH37_ASSEMBLIES, GRCH38, GRCH38_ASSEMBLIES):
             return GRCH37
 
         raise ValueError(f"Invalid assembly {assembly}")
-    return normalize_assembly,
+
+    return (normalize_assembly,)
 
 
 @app.cell
 def __():
-    tissue_types = {"iPSC": "Stem", "K562": "Bone Marrow", "NPC": "Stem", "CD8": "T Cell", "GM12878": "B Cell", "BJAB": "B Cell", "THP-1": "Blood Cell", "Jurkat": "T Cell" }
-    return tissue_types,
+    tissue_types = {
+        "iPSC": "Stem",
+        "K562": "Bone Marrow",
+        "NPC": "Stem",
+        "CD8": "T Cell",
+        "GM12878": "B Cell",
+        "BJAB": "B Cell",
+        "THP-1": "Blood Cell",
+        "Jurkat": "T Cell",
+    }
+    return (tissue_types,)
 
 
 @app.cell
@@ -96,7 +108,8 @@ def __():
             return "DHS"
         else:
             return "Tested Element"
-    return get_source_type,
+
+    return (get_source_type,)
 
 
 @app.cell
@@ -108,7 +121,8 @@ def __():
             assembly = screen_info["elements_references"][0]["assembly"][0]
 
         return assembly
-    return get_assembly,
+
+    return (get_assembly,)
 
 
 @app.cell
@@ -116,7 +130,8 @@ def __():
     def get_analysis_files(screen_info):
         af_accessions = screen_info["analyses"][0]["files"]
         return [file for file in screen_info["files"] if file["@id"] in af_accessions]
-    return get_analysis_files,
+
+    return (get_analysis_files,)
 
 
 @app.cell
@@ -147,7 +162,9 @@ def __(
         guides_file = [f for f in ref_files if "guide" in f["aliases"][0]][0]
         elements_file = [f for f in ref_files if "element" in f["aliases"][0]][0]
 
-        guide_quant = first(screen_info["related_datasets"][0]["files"], lambda x: x["output_type"] == "guide quantifications")
+        guide_quant = first(
+            screen_info["related_datasets"][0]["files"], lambda x: x["output_type"] == "guide quantifications"
+        )
 
         # CRISPRi Flow-FISH screen of multiple loci in K562 with PrimeFlow readout of PQBP1
         experiment = {
@@ -159,13 +176,12 @@ def __(
             "parent source type": get_source_type(screen_info["elements_references"][0]),
             "year": str(create_date.year),
             "lab": screen_info["lab"]["title"],
-            "tested_elements_file": 
-                {
-                    "description": guides_file["aliases"][0],
-                    "filename": os.path.basename(guides_file["cloud_metadata"]["url"]),
-                    "file_location": guides_file["cloud_metadata"]["url"],
-                    "genome_assembly": gene_assembly,
-                },
+            "tested_elements_file": {
+                "description": guides_file["aliases"][0],
+                "filename": os.path.basename(guides_file["cloud_metadata"]["url"]),
+                "file_location": guides_file["cloud_metadata"]["url"],
+                "genome_assembly": gene_assembly,
+            },
             "misc_files": [
                 {
                     "description": elements_file["aliases"][0],
@@ -190,14 +206,14 @@ def __(
         }
 
         return experiment
-    return build_experiment,
+
+    return (build_experiment,)
 
 
 @app.cell
 def __(first, get_analysis_files, get_assembly, normalize_assembly, os):
     def build_analysis(screen_info):
         gene_assembly = normalize_assembly(get_assembly(screen_info))
-
 
         af = get_analysis_files(screen_info)
         q_file = first(af, lambda x: x["output_category"] == "quantification")
@@ -209,7 +225,9 @@ def __(first, get_analysis_files, get_assembly, normalize_assembly, os):
         guides_file = [f for f in ref_files if "guide" in f["aliases"][0]][0]
         elements_file = [f for f in ref_files if "element" in f["aliases"][0]][0]
 
-        guide_quant = first(screen_info["related_datasets"][0]["files"], lambda x: x["output_type"] == "guide quantifications")
+        guide_quant = first(
+            screen_info["related_datasets"][0]["files"], lambda x: x["output_type"] == "guide quantifications"
+        )
 
         analysis = {
             "name": f"{crispr} {screen_info['assay_title'][0]} in {cell_line} for {gene} ({screen_info['accession']})",
@@ -247,7 +265,8 @@ def __(first, get_analysis_files, get_assembly, normalize_assembly, os):
             analysis["description"] = desc
 
         return analysis
-    return build_analysis,
+
+    return (build_analysis,)
 
 
 @app.cell
