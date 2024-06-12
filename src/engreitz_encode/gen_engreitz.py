@@ -1,4 +1,5 @@
 import argparse
+import asyncio
 import json
 import os.path
 import tempfile
@@ -7,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-import requests
+import httpx
 
 # These experiments have bad data -- the files are the wrong format
 # and don't contain all the necessary information for
@@ -268,13 +269,13 @@ def get_guide_quantification_urls(screens) -> list[str]:
     ]
 
 
-def download_file(url, output_path):
-    response = requests.get(url, timeout=5)
+async def download_file(client, url, output_path):
+    response = await client.get(url, timeout=5)
     with open(output_path, "w", encoding="utf-8") as output:
         output.write(response.content.decode())
 
 
-def gen_metadata(metadata_path, output_path) -> tuple[Optional[dict], Optional[dict]]:
+async def gen_metadata(metadata_path, output_path) -> tuple[Optional[dict], Optional[dict]]:
     curr_dir = Path(metadata_path)
     json_files = list(curr_dir.glob("*.json"))
 
@@ -297,25 +298,27 @@ def gen_metadata(metadata_path, output_path) -> tuple[Optional[dict], Optional[d
     screens = [expr[1] for expr in experiments]
 
     with tempfile.TemporaryDirectory(dir=output_path) as temp_dir:
+        downloads = []
         guides_url = get_guides_file_url(screens)
         guides_file = temp_dir / Path(os.path.basename(guides_url))
-        download_file(guides_url, guides_file)
+        downloads.append((guides_url, guides_file))
 
         elements_url = get_elements_file_url(screens)
         elements_file = temp_dir / Path(os.path.basename(elements_url))
-        download_file(elements_url, elements_file)
+        downloads.append((elements_url, elements_file))
 
         element_quant_urls = get_element_quantification_urls(screens)
         element_quant_files = [temp_dir / Path(os.path.basename(qu)) for qu in element_quant_urls]
-        for url, file in zip(element_quant_urls, element_quant_files):
-            download_file(url, file)
+        downloads.extend(zip(element_quant_urls, element_quant_files))
 
         guide_quant_urls = get_guide_quantification_urls(screens)
         guide_quant_files = [temp_dir / Path(os.path.basename(qu)) for qu in guide_quant_urls]
-        for url, file in zip(guide_quant_urls, guide_quant_files):
-            download_file(url, file)
+        downloads.extend(zip(guide_quant_urls, guide_quant_files))
 
-        time.sleep(30)
+        async with httpx.AsyncClient() as client:
+            tasks = [asyncio.create_task(download_file(client, url, file)) for url, file in downloads]
+            await asyncio.wait(tasks)
+
         # for file, screen in experiments:
         #     new_dir = temp_dir / Path(file.stem)
         #     new_dir.mkdir(exist_ok=True)
@@ -349,7 +352,7 @@ def write_experiment(experiment_metadata, analysis_metadata, output_directory):
 
 def run_cli():
     args = get_args()
-    experiment_metadata, analysis_metadata = gen_metadata(args.metadata_path, args.output_directory)
+    experiment_metadata, analysis_metadata = asyncio.run(gen_metadata(args.metadata_path, args.output_directory))
     if experiment_metadata is None or analysis_metadata is None:
         return
     write_experiment(experiment_metadata, analysis_metadata, args.output_directory)
