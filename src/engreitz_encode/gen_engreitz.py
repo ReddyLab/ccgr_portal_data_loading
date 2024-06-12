@@ -1,8 +1,13 @@
 import argparse
 import json
 import os.path
+import tempfile
+import time
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
+
+import requests
 
 # These experiments have bad data -- the files are the wrong format
 # and don't contain all the necessary information for
@@ -59,6 +64,14 @@ def first(iterable, test):
     for x in iterable:
         if test(x):
             return x
+
+
+def write_experiment_data():
+    pass
+
+
+def write_analysis_data():
+    pass
 
 
 def normalize_assembly(assembly):
@@ -219,9 +232,54 @@ def build_analysis(screen_info):
     return analysis
 
 
-def gen_metadata():
-    curr_dir = Path("./temp_data")
+# only one file
+def get_guides_file_url(screens) -> str:
+    screen = screens[0]
+    ref_files = screen["elements_references"][0]["files"]
+    return [f for f in ref_files if "guide" in f["aliases"][0]][0]["cloud_metadata"]["url"]
+
+
+# only one file
+def get_elements_file_url(screens) -> str:
+    screen = screens[0]
+    ref_files = screen["elements_references"][0]["files"]
+    return [f for f in ref_files if "element" in f["aliases"][0]][0]["cloud_metadata"]["url"]
+
+
+def get_element_quantification_urls(screens) -> list[str]:
+    element_quants = []
+    for screen in screens:
+        af = get_analysis_files(screen)
+        q_file = first(af, lambda x: x["output_category"] == "quantification")
+        element_quants.append(q_file["cloud_metadata"]["url"])
+
+    return element_quants
+
+
+def get_guide_quantification_urls(screens) -> list[str]:
+    return [
+        first(
+            screen["related_datasets"][0]["files"],
+            lambda x: x["output_type"] == "guide quantifications",
+        )[
+            "cloud_metadata"
+        ]["url"]
+        for screen in screens
+    ]
+
+
+def download_file(url, output_path):
+    response = requests.get(url, timeout=5)
+    with open(output_path, "w", encoding="utf-8") as output:
+        output.write(response.content.decode())
+
+
+def gen_metadata(metadata_path, output_path) -> tuple[Optional[dict], Optional[dict]]:
+    curr_dir = Path(metadata_path)
     json_files = list(curr_dir.glob("*.json"))
+
+    output_dir = Path(output_path)
+    output_dir.mkdir(exist_ok=True)
 
     experiments = []
     for file in json_files:
@@ -233,36 +291,65 @@ def gen_metadata():
 
         experiments.append((file, screen))
 
-    screens = set()
-    biosamples = set()
-    classifications = set()
+    if len(experiments) == 0:
+        return None, None
 
-    for file3, screen3 in experiments:
-        classifications.add(screen3["biosample_ontology"][0]["classification"])
-        biosamples.add(screen3["biosample_ontology"][0]["term_name"])
-        screens.add(screen3["assay_term_name"][0])
-        new_dir = curr_dir / Path(file3.stem)
-        new_dir.mkdir(exist_ok=True)
-        expr_path = new_dir / "experiment.json"
-        analysis_path = new_dir / "analysis001.json"
-        if not expr_path.exists():
-            expr_path.touch()
-        if not analysis_path.exists():
-            analysis_path.touch()
-        expr_path.write_text(json.dumps(build_experiment(screen3)))
-        analysis_path.write_text(json.dumps(build_analysis(screen3)))
+    screens = [expr[1] for expr in experiments]
 
-    print(biosamples)
-    print(classifications)
-    print(screens)
+    with tempfile.TemporaryDirectory(dir=output_path) as temp_dir:
+        guides_url = get_guides_file_url(screens)
+        guides_file = temp_dir / Path(os.path.basename(guides_url))
+        download_file(guides_url, guides_file)
+
+        elements_url = get_elements_file_url(screens)
+        elements_file = temp_dir / Path(os.path.basename(elements_url))
+        download_file(elements_url, elements_file)
+
+        element_quant_urls = get_element_quantification_urls(screens)
+        element_quant_files = [temp_dir / Path(os.path.basename(qu)) for qu in element_quant_urls]
+        for url, file in zip(element_quant_urls, element_quant_files):
+            download_file(url, file)
+
+        guide_quant_urls = get_guide_quantification_urls(screens)
+        guide_quant_files = [temp_dir / Path(os.path.basename(qu)) for qu in guide_quant_urls]
+        for url, file in zip(guide_quant_urls, guide_quant_files):
+            download_file(url, file)
+
+        time.sleep(30)
+        # for file, screen in experiments:
+        #     new_dir = temp_dir / Path(file.stem)
+        #     new_dir.mkdir(exist_ok=True)
+        #     build_experiment(screen)
+        #     build_analysis(screen)
+
+    return {}, {}
 
 
 def get_args():
-    parser = argparse.ArgumentParser(description="")
+    parser = argparse.ArgumentParser(
+        description="Generate an experiment/analysis with the Engreitz Flow-FISH  CRISPRi screens from Encode"
+    )
+    parser.add_argument("metadata_path", help="Encode screen metadata files")
+    parser.add_argument("output_directory", help="Directory to put output files")
 
     return parser.parse_args()
 
 
+def write_experiment(experiment_metadata, analysis_metadata, output_directory):
+    output_dir = Path(output_directory)
+    expr_path = output_dir / "experiment.json"
+    analysis_path = output_dir / "analysis001.json"
+    if not expr_path.exists():
+        expr_path.touch()
+    if not analysis_path.exists():
+        analysis_path.touch()
+    expr_path.write_text(json.dumps(experiment_metadata))
+    analysis_path.write_text(json.dumps(analysis_metadata))
+
+
 def run_cli():
-    args = get_args
-    gen_metadata()
+    args = get_args()
+    experiment_metadata, analysis_metadata = gen_metadata(args.metadata_path, args.output_directory)
+    if experiment_metadata is None or analysis_metadata is None:
+        return
+    write_experiment(experiment_metadata, analysis_metadata, args.output_directory)
