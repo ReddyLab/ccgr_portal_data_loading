@@ -66,6 +66,8 @@ GRCH37 = "GRCh37"
 GRCH37_ASSEMBLIES = {GRCH37, "hg19"}
 TISSUE_TYPES = {"K562": "Bone Marrow"}
 P_VAL_THRESHOLD = 0.05
+TESTED_ELEMENTS_FILE = "tested_elements.tsv"
+OBSERVATIONS_FILE = "observations.tsv"
 
 
 def first(iterable, test):
@@ -323,9 +325,7 @@ def gen_analysis_data(guides_file, dhs_file, results_file, strand_file):
 
 
 def normalize_assembly(assembly):
-    if assembly in GRCH38_ASSEMBLIES:
-        return GRCH38
-    elif assembly in GRCH37_ASSEMBLIES:
+    if assembly in GRCH37_ASSEMBLIES:
         return GRCH37
 
     raise ValueError(f"Invalid assembly {assembly}")
@@ -372,17 +372,8 @@ def build_experiment(screen_info):
 
     create_date = datetime.fromisoformat(screen_info["date_created"])
 
-    af = get_analysis_files(screen_info)
-    q_file = first(af, lambda x: x["output_category"] == "quantification")
-
     ref_files = screen_info["elements_references"][0]["files"]
     guides_file = [f for f in ref_files if "guide" in f["aliases"][0]][0]
-    elements_file = [f for f in ref_files if "element" in f["aliases"][0]][0]
-
-    guide_quant = first(
-        screen_info["related_datasets"][0]["files"],
-        lambda x: x["output_type"] == "guide quantifications",
-    )
 
     # CRISPRi Flow-FISH screen of multiple loci in K562 with PrimeFlow readout of PQBP1
     experiment = {
@@ -396,31 +387,10 @@ def build_experiment(screen_info):
         "lab": screen_info["lab"]["title"],
         "tested_elements_file": {
             "description": guides_file["aliases"][0],
-            "filename": os.path.basename(guides_file["cloud_metadata"]["url"]),
-            "file_location": guides_file["cloud_metadata"]["url"],
+            "filename": TESTED_ELEMENTS_FILE,
+            "file_location": TESTED_ELEMENTS_FILE,
             "genome_assembly": gene_assembly,
         },
-        "misc_files": [
-            {
-                "description": elements_file["aliases"][0],
-                "filename": os.path.basename(elements_file["cloud_metadata"]["url"]),
-                "file_location": elements_file["cloud_metadata"]["url"],
-                "genome_assembly": gene_assembly,
-            },
-            {
-                "description": q_file["output_type"].capitalize(),
-                "filename": os.path.basename(q_file["cloud_metadata"]["url"]),
-                "file_location": q_file["cloud_metadata"]["url"],
-                "genome_assembly": gene_assembly,
-            },
-            {
-                "description": guide_quant["output_type"].capitalize(),
-                "filename": os.path.basename(guide_quant["cloud_metadata"]["url"]),
-                "file_location": guide_quant["cloud_metadata"]["url"],
-                "genome_assembly": gene_assembly,
-            },
-        ],
-        "data_format": "jesse-engreitz",
     }
 
     return experiment
@@ -431,21 +401,11 @@ def build_analysis(screen_info):
 
     af = get_analysis_files(screen_info)
     q_file = first(af, lambda x: x["output_category"] == "quantification")
-    gene = screen_info["examined_loci"][0]["gene"]["symbol"]
     crispr = screen_info["related_datasets"][0]["perturbation_type"]
     cell_line = screen_info["biosample_ontology"][0]["term_name"]
 
-    ref_files = screen_info["elements_references"][0]["files"]
-    guides_file = [f for f in ref_files if "guide" in f["aliases"][0]][0]
-    elements_file = [f for f in ref_files if "element" in f["aliases"][0]][0]
-
-    guide_quant = first(
-        screen_info["related_datasets"][0]["files"],
-        lambda x: x["output_type"] == "guide quantifications",
-    )
-
     analysis = {
-        "name": f"{crispr} {screen_info['assay_title'][0]} in {cell_line} for {gene} ({screen_info['accession']})",
+        "name": f"{crispr} {screen_info['assay_title'][0]} in {cell_line}",
         "description": screen_info.get("biosample_summary"),
         "source type": "gRNA",
         "genome_assembly": gene_assembly,
@@ -453,27 +413,9 @@ def build_analysis(screen_info):
         "p_val_threshold": 0.05,
         "results": {
             "description": f"{q_file['output_type'].capitalize()}\nFrom Ben Doughty, via Email:\nFor the effect size calculations, since we do a 6-bin sort, we don't actually compute a log2-fold change. Instead, we use the data to compute an effect size in \"gene expression\" space, which we normalize to the negative controls. The values are then scaled, so what an effect size of -0.2 means is that this guide decreased the expression of the target gene by 20%. An effect size of 0 would be no change in expression, and an effect size of +0.1 would mean a 10% increase in expression. The lowest we can go is -1 (which means total elimination of signal), and technically the effect size is unbounded in the positive direction, although we never see _super_ strong positive guides with CRISPRi. ",
-            "filename": os.path.basename(q_file["cloud_metadata"]["url"]),
-            "file_location": q_file["cloud_metadata"]["url"],
+            "filename": OBSERVATIONS_FILE,
+            "file_location": OBSERVATIONS_FILE,
         },
-        "misc_files": [
-            {
-                "description": guides_file["aliases"][0],
-                "filename": os.path.basename(guides_file["cloud_metadata"]["url"]),
-                "file_location": guides_file["cloud_metadata"]["url"],
-            },
-            {
-                "description": elements_file["aliases"][0],
-                "filename": os.path.basename(elements_file["cloud_metadata"]["url"]),
-                "file_location": elements_file["cloud_metadata"]["url"],
-            },
-            {
-                "description": guide_quant["output_type"].capitalize(),
-                "filename": os.path.basename(guide_quant["cloud_metadata"]["url"]),
-                "file_location": guide_quant["cloud_metadata"]["url"],
-            },
-        ],
-        "data_format": "jesse-engreitz",
     }
 
     if (desc := screen_info.get("description")) is not None:
@@ -527,11 +469,11 @@ async def gen_data(metadata_path, output_path) -> tuple[Optional[dict], Optional
     output_dir = Path(output_path)
     output_dir.mkdir(exist_ok=True)
 
-    tested_elements_file = open(output_dir / Path("tested_elements.tsv"), "w", encoding="utf-8")
+    tested_elements_file = open(output_dir / Path(TESTED_ELEMENTS_FILE), "w", encoding="utf-8")
     tested_elements_csv = csv.writer(tested_elements_file, delimiter="\t", quoting=csv.QUOTE_NONE)
     tested_elements_csv.writerow(EXPERIMENT_FIELD_NAMES)
 
-    observations_file = open(output_dir / Path("observations.tsv"), "w", encoding="utf-8")
+    observations_file = open(output_dir / Path(OBSERVATIONS_FILE), "w", encoding="utf-8")
     observations_csv = csv.writer(observations_file, delimiter="\t", quoting=csv.QUOTE_NONE)
     observations_csv.writerow(ANALYSIS_FIELD_NAMES)
 
@@ -585,7 +527,7 @@ async def gen_data(metadata_path, output_path) -> tuple[Optional[dict], Optional
 
     tested_elements_file.close()
     observations_file.close()
-    return {}, {}
+    return build_experiment(screens[0]), build_analysis(screens[0])
 
 
 def get_args():
