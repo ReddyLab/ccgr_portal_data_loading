@@ -6,6 +6,8 @@ import os.path
 import re
 import tempfile
 from datetime import datetime
+from collections import defaultdict
+from os import SEEK_SET
 from pathlib import Path
 from typing import Optional
 
@@ -63,6 +65,7 @@ GOOD_ENGREITZ_EXPERIMENTS = {
 GRCH37 = "GRCh37"
 GRCH37_ASSEMBLIES = {GRCH37, "hg19"}
 TISSUE_TYPES = {"K562": "Bone Marrow"}
+P_VAL_THRESHOLD = 0.05
 
 
 def first(iterable, test):
@@ -71,7 +74,7 @@ def first(iterable, test):
             return x
 
 
-def gen_experiment_data(guides_file, elements_file, results_file, strand_file):
+def gen_experiment_data(guides_file, dhs_file, results_file, strand_file):
     # The experiment data requires 4 files from the ENCODE data set:
     # 1) element quantifications aka results_file
     # 2) elements reference (guides) aka element_file
@@ -89,7 +92,7 @@ def gen_experiment_data(guides_file, elements_file, results_file, strand_file):
     element_tsv = open(guides_file, encoding="utf-8")
     element_reader = csv.DictReader(element_tsv, delimiter="\t", quoting=csv.QUOTE_NONE)
 
-    parent_element_tsv = open(elements_file, encoding="utf-8")
+    parent_element_tsv = open(dhs_file, encoding="utf-8")
     parent_reader = csv.DictReader(parent_element_tsv, delimiter="\t", quoting=csv.QUOTE_NONE)
 
     oligo_to_parents = {}
@@ -191,8 +194,132 @@ def gen_experiment_data(guides_file, elements_file, results_file, strand_file):
     strand_tsv.close()
 
 
-def write_analysis_data():
-    pass
+def gen_analysis_data(guides_file, dhs_file, results_file, strand_file):
+    # The analysis data requires 4 files from the ENCODE data set:
+    # 1) element quantifications aka results_file
+    # 2) elements reference (guides) aka guides_file
+    # 3) elements reference (DHS peaks) aka elements_file
+    # 4) a guide quantifications file aka strand_file
+    #
+    # Loading the files requires compiling data from all four files. The element quantifications (1) file
+    # Tells us which peaks DHS peaks from the elements reference (3) to include. The elements reference (3)
+    # includes all the oligo ids for a given DHS peak which we can use to get the guids from elements references (2).
+    # Unfortunately, elements reference (2) doesn't have the strand information! For this we need one of the guide
+    # quantification files. We can match the guide in (2) to the guide information in (4) via the guide sequence.
+    #
+    # Once we have all the guide information we can match the guide (source) to the observation and target information
+    # which are in the element quantifications (1) file.
+
+    #
+    # Much like when loading the experiment we have to use the results file to figure out which DHS peaks to include
+    #
+    results_tsv = open(results_file, encoding="utf-8")
+    results_reader = csv.DictReader(results_tsv, delimiter="\t", quoting=csv.QUOTE_NONE)
+    result_targets = {
+        f'{line["chrPerturbationTarget"]}:{line["startPerturbationTarget"]}-{line["endPerturbationTarget"]}'
+        for line in results_reader
+    }
+
+    #
+    # Match DHS Peaks to oligo ids and create a set of all oligo ids
+    #
+    parent_element_tsv = open(dhs_file, encoding="utf-8")
+    parent_reader = csv.DictReader(parent_element_tsv, delimiter="\t", quoting=csv.QUOTE_NONE)
+    parent_elements = defaultdict(set)
+    parent_oligos = set()
+    for line in parent_reader:
+        if line["target"] in result_targets:
+            parent_elements[line["target"]].add(line["OligoID"])
+            parent_oligos.add(line["OligoID"])
+
+    #
+    # Get all guides associated with DHS peaks
+    #
+    element_tsv = open(guides_file, encoding="utf-8")
+    element_reader = csv.DictReader(element_tsv, delimiter="\t", quoting=csv.QUOTE_NONE)
+    elements = {}
+    for e in element_reader:
+        if e["OligoID"] not in parent_oligos:
+            continue
+
+        elements[e["OligoID"]] = (e["chr"], int(e["start"]), int(e["end"]), e["GuideSequence"])
+
+    #
+    # Get strands for guides
+    #
+    strand_tsv = open(strand_file, encoding="utf-8")
+    strand_reader = csv.reader(strand_tsv, delimiter="\t", quoting=csv.QUOTE_NONE)
+    chrom_strands = ["+", "-"]
+    guide_strands = {}
+    for line in strand_reader:
+        if line[5] in chrom_strands:
+            guide_strands[line[14]] = line[5]
+        else:
+            guide_strands[line[14]] = None
+
+    #
+    # Go back through the results, matching guides to observations using the parent_elements dictionary
+    #
+    results_tsv.seek(0, SEEK_SET)
+    results_reader = csv.DictReader(results_tsv, delimiter="\t", quoting=csv.QUOTE_NONE)
+    for line in results_reader:
+        chrom_name, start, end = (
+            line["chrPerturbationTarget"],
+            int(line["startPerturbationTarget"]),
+            int(line["endPerturbationTarget"]),
+        )
+        parent_element = f"{chrom_name}:{start}-{end}"
+        oligos = parent_elements[parent_element]
+
+        raw_p_value = line["pValue"]
+        adjusted_p_value = line["pValueAdjusted"]
+
+        # An explanation of the effect size values, from an email with Ben Doughty:
+        #
+        # For the effect size calculations, since we do a 6-bin sort, we don't actually compute a log2-fold change.
+        # Instead, we use the data to compute an effect size in "gene expression" space, which we normalize to the
+        # negative controls. The values are then scaled, so what an effect size of -0.2 means is that this guide
+        # decreased the expression of the target gene by 20%. An effect size of 0 would be no change in expression,
+        # and an effect size of +0.1 would mean a 10% increase in expression. The lowest we can go is -1 (which means
+        # total elimination of signal), and technically the effect size is unbounded in the positive direction,
+        # although we never see _super_ strong positive guides with CRISPRi.
+        effect_size = line["EffectSize"]
+
+        target_gene_name = line["measuredGeneSymbol"]
+        target_ensembl_id = line["measuredEnsemblID"]
+
+        if float(adjusted_p_value) <= P_VAL_THRESHOLD:
+            if float(effect_size) > 0:
+                cat_facet = "Direction=Enriched Only"
+            else:
+                cat_facet = "Direction=Depleted Only"
+        else:
+            cat_facet = "Direction=Non-significant"
+
+        for oligo in oligos:
+            guide_chrom, guide_start, guide_end, guide_seq = elements[oligo]
+
+            # We previously filtered out guides invalid strands
+            # Here, we skip over those guides
+            if guide_seq in guide_strands:
+                yield (
+                    guide_chrom,
+                    guide_start,
+                    guide_end,
+                    "[)",
+                    guide_strands[guide_seq],
+                    target_gene_name,
+                    target_ensembl_id,
+                    raw_p_value,
+                    adjusted_p_value,
+                    effect_size,
+                    cat_facet,
+                )
+
+    results_tsv.close()
+    element_tsv.close()
+    parent_element_tsv.close()
+    strand_tsv.close()
 
 
 def normalize_assembly(assembly):
@@ -454,7 +581,7 @@ async def gen_data(metadata_path, output_path) -> tuple[Optional[dict], Optional
         for accession, (guides_file, elements_file, results_file, strand_file) in screen_data.items():
             print(f"Working on {accession}")
             tested_elements_csv.writerows(gen_experiment_data(guides_file, elements_file, results_file, strand_file))
-            observations_csv.writerows()
+            observations_csv.writerows(gen_analysis_data(guides_file, elements_file, results_file, strand_file))
 
     tested_elements_file.close()
     observations_file.close()

@@ -78,10 +78,6 @@
           }
         }
       }
-    },
-    "data_format": {
-      "type": "string",
-      "enum": ["standard", "jesse-engreitz"]
     }
   }
 }
