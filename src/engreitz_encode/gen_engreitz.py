@@ -160,7 +160,7 @@ def gen_experiment_data(guides_file, dhs_file, results_file, strand_file):
         # We previously filtered out guides invalid strands
         # Here, we skip over those guides
         #
-        if guide_seq not in guide_strands:
+        if guide_seq not in guide_strands or guide_strands[guide_seq] is None:
             continue
 
         parent_chrom, parent_start, parent_end = oligo_to_parents[oligo_id]
@@ -301,6 +301,13 @@ def gen_analysis_data(guides_file, dhs_file, results_file, strand_file):
         for oligo in oligos:
             guide_chrom, guide_start, guide_end, guide_seq = elements[oligo]
 
+            #
+            # We previously filtered out guides invalid strands
+            # Here, we skip over those guides
+            #
+            if guide_seq not in guide_strands or guide_strands[guide_seq] is None:
+                continue
+
             # We previously filtered out guides invalid strands
             # Here, we skip over those guides
             if guide_seq in guide_strands:
@@ -308,8 +315,8 @@ def gen_analysis_data(guides_file, dhs_file, results_file, strand_file):
                     guide_chrom,
                     guide_start,
                     guide_end,
-                    "[)",
                     guide_strands[guide_seq],
+                    "[)",
                     target_gene_name,
                     target_ensembl_id,
                     raw_p_value,
@@ -363,7 +370,7 @@ def get_analysis_files(screen_info):
     return [file for file in screen_info["files"] if file["@id"] in af_accessions]
 
 
-def build_experiment(screen_info):
+def build_experiment(screen_info, output_dir: Path):
     gene_assembly = normalize_assembly(get_assembly(screen_info))
 
     cell_line = screen_info["biosample_ontology"][0]["term_name"]
@@ -388,7 +395,7 @@ def build_experiment(screen_info):
         "tested_elements_file": {
             "description": guides_file["aliases"][0],
             "filename": TESTED_ELEMENTS_FILE,
-            "file_location": TESTED_ELEMENTS_FILE,
+            "file_location": str((output_dir / Path(TESTED_ELEMENTS_FILE)).absolute()),
             "genome_assembly": gene_assembly,
         },
     }
@@ -396,7 +403,7 @@ def build_experiment(screen_info):
     return experiment
 
 
-def build_analysis(screen_info):
+def build_analysis(screen_info, output_dir: Path):
     gene_assembly = normalize_assembly(get_assembly(screen_info))
 
     af = get_analysis_files(screen_info)
@@ -414,7 +421,7 @@ def build_analysis(screen_info):
         "results": {
             "description": f"{q_file['output_type'].capitalize()}\nFrom Ben Doughty, via Email:\nFor the effect size calculations, since we do a 6-bin sort, we don't actually compute a log2-fold change. Instead, we use the data to compute an effect size in \"gene expression\" space, which we normalize to the negative controls. The values are then scaled, so what an effect size of -0.2 means is that this guide decreased the expression of the target gene by 20%. An effect size of 0 would be no change in expression, and an effect size of +0.1 would mean a 10% increase in expression. The lowest we can go is -1 (which means total elimination of signal), and technically the effect size is unbounded in the positive direction, although we never see _super_ strong positive guides with CRISPRi. ",
             "filename": OBSERVATIONS_FILE,
-            "file_location": OBSERVATIONS_FILE,
+            "file_location": str((output_dir / Path(OBSERVATIONS_FILE)).absolute()),
         },
     }
 
@@ -527,7 +534,7 @@ async def gen_data(metadata_path, output_path) -> tuple[Optional[dict], Optional
 
     tested_elements_file.close()
     observations_file.close()
-    return build_experiment(screens[0]), build_analysis(screens[0])
+    return build_experiment(screens[0], output_dir), build_analysis(screens[0], output_dir)
 
 
 def get_args():
