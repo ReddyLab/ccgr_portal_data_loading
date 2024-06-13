@@ -166,7 +166,7 @@ class UploadSession:
                     case "F":
                         message = "Finished Successfully"
                     case "E":
-                        message = f"Error: {status_result['error_message']}"
+                        message = f"Server Error: {status_result['error_message']}"
 
                 if status not in statuses:
                     print(message)
