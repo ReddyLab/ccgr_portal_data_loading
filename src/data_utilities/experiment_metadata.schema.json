@@ -62,22 +62,6 @@
           "enum": ["GRCh37", "GRCh38"]
         }
       }
-    },
-    "misc_files": {
-      "type": "array",
-      "items": {
-        "properties": {
-          "description": {
-            "type": "string"
-          },
-          "filename": { "type": "string" },
-          "file_location": { "type": "string" },
-          "genome_assembly": {
-            "type": "string",
-            "enum": ["GRCh37", "GRCh38"]
-          }
-        }
-      }
     }
   }
 }
