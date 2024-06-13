@@ -1,14 +1,18 @@
 import argparse
 import asyncio
+import csv
 import json
 import os.path
+import re
 import tempfile
-import time
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 import httpx
+
+from data_utilities.experiment_validation import FIELD_NAMES as EXPERIMENT_FIELD_NAMES
+from data_utilities.analysis_validation import FIELD_NAMES as ANALYSIS_FIELD_NAMES
 
 # These experiments have bad data -- the files are the wrong format
 # and don't contain all the necessary information for
@@ -67,8 +71,124 @@ def first(iterable, test):
             return x
 
 
-def write_experiment_data():
-    pass
+def gen_experiment_data(guides_file, elements_file, results_file, strand_file):
+    # The experiment data requires 4 files from the ENCODE data set:
+    # 1) element quantifications aka results_file
+    # 2) elements reference (guides) aka element_file
+    # 3) elements reference (DHS peaks) aka parent_element_file
+    # 4) a guide quantifications file aka guide_quant_file
+    #
+    # Loading the files requires compiling data from all four files. The element quantifications (1) file
+    # Tells us which peaks DHS peaks from the elements reference (3) to include. The elements reference (3)
+    # includes all the oligo ids for a given DHS peak which we can use to get the guids from elements references (2).
+    # Unfortunately, elements reference (2) doesn't have the strand information! For this we need one of the guide
+    # quantification files. We can match the guide in (2) to the guide information in (4) via the guide sequence.
+    #
+    # Once we have all the guide and DHS peak information we can add the guides and dhs peaks they are children of to the DB
+
+    element_tsv = open(guides_file, encoding="utf-8")
+    element_reader = csv.DictReader(element_tsv, delimiter="\t", quoting=csv.QUOTE_NONE)
+
+    parent_element_tsv = open(elements_file, encoding="utf-8")
+    parent_reader = csv.DictReader(parent_element_tsv, delimiter="\t", quoting=csv.QUOTE_NONE)
+
+    oligo_to_parents = {}
+
+    results_tsv = open(results_file, encoding="utf-8")
+    results_reader = csv.DictReader(results_tsv, delimiter="\t", quoting=csv.QUOTE_NONE)
+
+    #
+    # Figure out which DHS peaks to include for this experiment
+    #
+    result_targets = {
+        f'{line["chrPerturbationTarget"]}:{line["startPerturbationTarget"]}-{line["endPerturbationTarget"]}'
+        for line in results_reader
+    }
+
+    #
+    # Read guide strand and type information from the guide quantification file.
+    # The type information is used for the GrnaType facet
+    #
+    strand_tsv = open(strand_file, encoding="utf-8")
+    strand_reader = csv.reader(strand_tsv, delimiter="\t", quoting=csv.QUOTE_NONE)
+    chrom_strands = ["+", "-"]
+    guide_strands = {}
+    guide_types = {}
+    for line in strand_reader:
+        if line[5] in chrom_strands:
+            guide_strands[line[14]] = line[5]
+        else:
+            guide_strands[line[14]] = None
+        guide_types[line[14]] = line[15]
+
+    #
+    # Build parent (DHS Peak) features and create the oligo->peak mapping
+    #
+    for line in parent_reader:
+        oligo_id, parent_string = line["OligoID"], line["target"]
+        parent_string.strip()
+        if parent_string not in result_targets:
+            continue
+
+        if (parent_info := re.match(r"(.+):(\d+)-(\d+)", parent_string)) is not None:
+            parent_chrom, parent_start, parent_end = (
+                parent_info.group(1),
+                int(parent_info.group(2)),
+                int(parent_info.group(3)),
+            )
+        else:
+            continue
+
+        oligo_to_parents[oligo_id] = (parent_chrom, parent_start, parent_end)
+
+    #
+    # Build the guide features
+    #
+    for line in element_reader:
+        oligo_id = line["OligoID"]
+        if oligo_id not in oligo_to_parents:
+            continue
+
+        guide_seq = line["GuideSequence"]
+
+        #
+        # We previously filtered out guides invalid strands
+        # Here, we skip over those guides
+        #
+        if guide_seq not in guide_strands:
+            continue
+
+        parent_chrom, parent_start, parent_end = oligo_to_parents[oligo_id]
+
+        element_chrom, element_start, element_end = (line["chr"], int(line["start"]), int(line["end"]))
+        strand = guide_strands[guide_seq]
+
+        if guide_types[guide_seq] == "targeting":
+            guide_type = "Targeting"
+        elif guide_types[guide_seq] == "negative_control":
+            guide_type = "Negative Control"
+        else:
+            raise ValueError(f"Guide Type: {guide_types[guide_seq]}")
+
+        yield (
+            element_chrom,
+            element_start,
+            element_end,
+            strand,
+            "[)",
+            parent_chrom,
+            parent_start,
+            parent_end,
+            ".",
+            "[)",
+            f"gRNA Type={guide_type}",
+            f"grna={guide_seq}",
+        )
+
+    element_tsv.close()
+    parent_element_tsv.close()
+    results_tsv.close()
+    strand_tsv.close()
 
 
 def write_analysis_data():
@@ -92,12 +212,14 @@ def get_source_type(element_reference):
     st_set = set(source_types)
     if "accessible genome regions" in st_set:
         return "Chromatin Accessible Region"
-    elif "candidate cis-regulatory elements" in st_set:
+
+    if "candidate cis-regulatory elements" in st_set:
         return "cCRE"
-    elif "DNase hypersensitive sites" in st_set:
+
+    if "DNase hypersensitive sites" in st_set:
         return "DHS"
-    else:
-        return "Tested Element"
+
+    return "Tested Element"
 
 
 def get_assembly(screen_info):
@@ -233,54 +355,58 @@ def build_analysis(screen_info):
     return analysis
 
 
-# only one file
-def get_guides_file_url(screens) -> str:
-    screen = screens[0]
+# Guides
+def get_guides_file_url(screen) -> str:
     ref_files = screen["elements_references"][0]["files"]
     return [f for f in ref_files if "guide" in f["aliases"][0]][0]["cloud_metadata"]["url"]
 
 
-# only one file
-def get_elements_file_url(screens) -> str:
-    screen = screens[0]
+# This file helps map DHSs from the results file to guides
+def get_elements_file_url(screen) -> str:
     ref_files = screen["elements_references"][0]["files"]
     return [f for f in ref_files if "element" in f["aliases"][0]][0]["cloud_metadata"]["url"]
 
 
-def get_element_quantification_urls(screens) -> list[str]:
-    element_quants = []
-    for screen in screens:
-        af = get_analysis_files(screen)
-        q_file = first(af, lambda x: x["output_category"] == "quantification")
-        element_quants.append(q_file["cloud_metadata"]["url"])
-
-    return element_quants
-
-
-def get_guide_quantification_urls(screens) -> list[str]:
+# This is the results file
+def get_element_quantification_url(screen) -> list[str]:
     return [
-        first(
-            screen["related_datasets"][0]["files"],
-            lambda x: x["output_type"] == "guide quantifications",
-        )[
-            "cloud_metadata"
-        ]["url"]
-        for screen in screens
-    ]
+        file["cloud_metadata"]["url"] for file in screen["files"] if file["output_type"] == "element quantifications"
+    ][0]
+
+
+# We only need one because the only reason we use this is to get the
+# guide strand
+def get_guide_quantification_url(screen) -> list[str]:
+    return [
+        file["cloud_metadata"]["url"]
+        for file in screen["related_datasets"][0]["files"]
+        if file["output_type"] == "guide quantifications"
+    ][0]
 
 
 async def download_file(client, url, output_path):
+    # Don't re-download files we've already downloaded
+    if Path(output_path).exists():
+        return
     response = await client.get(url, timeout=5)
     with open(output_path, "w", encoding="utf-8") as output:
         output.write(response.content.decode())
 
 
-async def gen_metadata(metadata_path, output_path) -> tuple[Optional[dict], Optional[dict]]:
+async def gen_data(metadata_path, output_path) -> tuple[Optional[dict], Optional[dict]]:
     curr_dir = Path(metadata_path)
     json_files = list(curr_dir.glob("*.json"))
 
     output_dir = Path(output_path)
     output_dir.mkdir(exist_ok=True)
+
+    tested_elements_file = open(output_dir / Path("tested_elements.tsv"), "w", encoding="utf-8")
+    tested_elements_csv = csv.writer(tested_elements_file, delimiter="\t", quoting=csv.QUOTE_NONE)
+    tested_elements_csv.writerow(EXPERIMENT_FIELD_NAMES)
+
+    observations_file = open(output_dir / Path("observations.tsv"), "w", encoding="utf-8")
+    observations_csv = csv.writer(observations_file, delimiter="\t", quoting=csv.QUOTE_NONE)
+    observations_csv.writerow(ANALYSIS_FIELD_NAMES)
 
     experiments = []
     for file in json_files:
@@ -293,38 +419,45 @@ async def gen_metadata(metadata_path, output_path) -> tuple[Optional[dict], Opti
         experiments.append((file, screen))
 
     if len(experiments) == 0:
+        tested_elements_file.close()
+        observations_file.close()
         return None, None
 
     screens = [expr[1] for expr in experiments]
 
     with tempfile.TemporaryDirectory(dir=output_path) as temp_dir:
         downloads = []
-        guides_url = get_guides_file_url(screens)
-        guides_file = temp_dir / Path(os.path.basename(guides_url))
-        downloads.append((guides_url, guides_file))
+        screen_data = {}
+        for screen in screens:
+            guides_url = get_guides_file_url(screen)
+            guides_file = temp_dir / Path(os.path.basename(guides_url))
+            downloads.append((guides_url, guides_file))
 
-        elements_url = get_elements_file_url(screens)
-        elements_file = temp_dir / Path(os.path.basename(elements_url))
-        downloads.append((elements_url, elements_file))
+            elements_url = get_elements_file_url(screen)
+            elements_file = temp_dir / Path(os.path.basename(elements_url))
+            downloads.append((elements_url, elements_file))
 
-        element_quant_urls = get_element_quantification_urls(screens)
-        element_quant_files = [temp_dir / Path(os.path.basename(qu)) for qu in element_quant_urls]
-        downloads.extend(zip(element_quant_urls, element_quant_files))
+            results_url = get_element_quantification_url(screen)
+            results_file = temp_dir / Path(os.path.basename(results_url))
+            downloads.append((results_url, results_file))
 
-        guide_quant_urls = get_guide_quantification_urls(screens)
-        guide_quant_files = [temp_dir / Path(os.path.basename(qu)) for qu in guide_quant_urls]
-        downloads.extend(zip(guide_quant_urls, guide_quant_files))
+            guide_strand_url = get_guide_quantification_url(screen)
+            guide_strand_file = temp_dir / Path(os.path.basename(guide_strand_url))
+            downloads.append((guide_strand_url, guide_strand_file))
+
+            screen_data[screen["accession"]] = (guides_file, elements_file, results_file, guide_strand_file)
 
         async with httpx.AsyncClient() as client:
             tasks = [asyncio.create_task(download_file(client, url, file)) for url, file in downloads]
             await asyncio.wait(tasks)
 
-        # for file, screen in experiments:
-        #     new_dir = temp_dir / Path(file.stem)
-        #     new_dir.mkdir(exist_ok=True)
-        #     build_experiment(screen)
-        #     build_analysis(screen)
+        for accession, (guides_file, elements_file, results_file, strand_file) in screen_data.items():
+            print(f"Working on {accession}")
+            tested_elements_csv.writerows(gen_experiment_data(guides_file, elements_file, results_file, strand_file))
+            observations_csv.writerows()
 
+    tested_elements_file.close()
+    observations_file.close()
     return {}, {}
 
 
@@ -352,7 +485,7 @@ def write_experiment(experiment_metadata, analysis_metadata, output_directory):
 
 def run_cli():
     args = get_args()
-    experiment_metadata, analysis_metadata = asyncio.run(gen_metadata(args.metadata_path, args.output_directory))
+    experiment_metadata, analysis_metadata = asyncio.run(gen_data(args.metadata_path, args.output_directory))
     if experiment_metadata is None or analysis_metadata is None:
         return
     write_experiment(experiment_metadata, analysis_metadata, args.output_directory)
