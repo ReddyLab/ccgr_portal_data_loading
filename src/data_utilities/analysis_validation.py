@@ -63,7 +63,7 @@ def validate_data(reader):
             errors.add(f"Invalid strand: {line['strand']} (line {i})")
 
         if not validate_bounds(line["bounds"]):
-            errors.add(f"Invalid bounds: {line['strand']} (line {i})")
+            errors.add(f"Invalid bounds: {line['bounds']} (line {i})")
 
         if not validate_gene_name(line["gene_name"]):
             errors.add(f"Invalid gene name: {line['gene_name']} (line {i})")
