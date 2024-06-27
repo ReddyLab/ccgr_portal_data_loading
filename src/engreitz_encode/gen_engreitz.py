@@ -476,15 +476,8 @@ async def gen_data(metadata_path, output_path) -> tuple[Optional[dict], Optional
     output_dir = Path(output_path)
     output_dir.mkdir(exist_ok=True)
 
-    tested_elements_file = open(output_dir / Path(TESTED_ELEMENTS_FILE), "w", encoding="utf-8")
-    tested_elements_csv = csv.writer(tested_elements_file, delimiter="\t", quoting=csv.QUOTE_NONE)
-    tested_elements_csv.writerow(EXPERIMENT_FIELD_NAMES)
+    metadata_paths = []
 
-    observations_file = open(output_dir / Path(OBSERVATIONS_FILE), "w", encoding="utf-8")
-    observations_csv = csv.writer(observations_file, delimiter="\t", quoting=csv.QUOTE_NONE)
-    observations_csv.writerow(ANALYSIS_FIELD_NAMES)
-
-    experiments = []
     for file in json_files:
         with open(file, encoding="utf-8") as f:
             screen = json.load(f)
@@ -492,19 +485,19 @@ async def gen_data(metadata_path, output_path) -> tuple[Optional[dict], Optional
         if screen["accession"] not in GOOD_ENGREITZ_EXPERIMENTS:
             continue
 
-        experiments.append((file, screen))
+        expr_dir = output_dir / Path(screen["accession"])
+        expr_dir.mkdir(exist_ok=True)
 
-    if len(experiments) == 0:
-        tested_elements_file.close()
-        observations_file.close()
-        return None, None
+        tested_elements_file = open(expr_dir / Path(TESTED_ELEMENTS_FILE), "w", encoding="utf-8")
+        tested_elements_csv = csv.writer(tested_elements_file, delimiter="\t", quoting=csv.QUOTE_NONE)
+        tested_elements_csv.writerow(EXPERIMENT_FIELD_NAMES)
 
-    screens = [expr[1] for expr in experiments]
+        observations_file = open(expr_dir / Path(OBSERVATIONS_FILE), "w", encoding="utf-8")
+        observations_csv = csv.writer(observations_file, delimiter="\t", quoting=csv.QUOTE_NONE)
+        observations_csv.writerow(ANALYSIS_FIELD_NAMES)
 
-    with tempfile.TemporaryDirectory(dir=output_path) as temp_dir:
-        downloads = []
-        screen_data = {}
-        for screen in screens:
+        with tempfile.TemporaryDirectory(dir=output_path) as temp_dir:
+            downloads = []
             guides_url = get_guides_file_url(screen)
             guides_file = temp_dir / Path(os.path.basename(guides_url))
             downloads.append((guides_url, guides_file))
@@ -521,20 +514,27 @@ async def gen_data(metadata_path, output_path) -> tuple[Optional[dict], Optional
             guide_strand_file = temp_dir / Path(os.path.basename(guide_strand_url))
             downloads.append((guide_strand_url, guide_strand_file))
 
-            screen_data[screen["accession"]] = (guides_file, elements_file, results_file, guide_strand_file)
+            async with httpx.AsyncClient() as client:
+                tasks = [asyncio.create_task(download_file(client, url, file)) for url, file in downloads]
+                await asyncio.wait(tasks)
 
-        async with httpx.AsyncClient() as client:
-            tasks = [asyncio.create_task(download_file(client, url, file)) for url, file in downloads]
-            await asyncio.wait(tasks)
+            print(f"Working on {screen['accession']}")
+            tested_elements_csv.writerows(
+                gen_experiment_data(guides_file, elements_file, results_file, guide_strand_file)
+            )
+            observations_csv.writerows(gen_analysis_data(guides_file, elements_file, results_file, guide_strand_file))
 
-        for accession, (guides_file, elements_file, results_file, strand_file) in screen_data.items():
-            print(f"Working on {accession}")
-            tested_elements_csv.writerows(gen_experiment_data(guides_file, elements_file, results_file, strand_file))
-            observations_csv.writerows(gen_analysis_data(guides_file, elements_file, results_file, strand_file))
+        tested_elements_file.close()
+        observations_file.close()
 
-    tested_elements_file.close()
-    observations_file.close()
-    return build_experiment(screens[0], output_dir), build_analysis(screens[0], output_dir)
+        expr_metadata = build_experiment(screen, expr_dir)
+        analysis_metadata = build_analysis(screen, expr_dir)
+
+        metadata_paths.append(write_experiment(expr_metadata, analysis_metadata, expr_dir))
+
+    with open(output_dir / Path("upload_metadata.tsv"), "w", encoding="utf-8") as upload_metadata:
+        for expr, analysis in metadata_paths:
+            upload_metadata.write(f"\t{expr.absolute()}\t{analysis.absolute()}\n")
 
 
 def get_args():
@@ -557,11 +557,9 @@ def write_experiment(experiment_metadata, analysis_metadata, output_directory):
         analysis_path.touch()
     expr_path.write_text(json.dumps(experiment_metadata))
     analysis_path.write_text(json.dumps(analysis_metadata))
+    return expr_path, analysis_path
 
 
 def run_cli():
     args = get_args()
-    experiment_metadata, analysis_metadata = asyncio.run(gen_data(args.metadata_path, args.output_directory))
-    if experiment_metadata is None or analysis_metadata is None:
-        return
-    write_experiment(experiment_metadata, analysis_metadata, args.output_directory)
+    metadata_paths = asyncio.run(gen_data(args.metadata_path, args.output_directory))
