@@ -27,11 +27,15 @@
     "assay": {
       "type": "string",
       "enum": [
-        "scCERES",
-        "wgCERES",
+        "Perturb-Seq",
+        "Proliferation Screen",
         "ATAC-STARR-seq",
         "Flow-FISH CRISPR screen"
       ]
+    },
+    "crispr": {
+      "type": "string",
+      "enum": ["CRISPRa", "CRISPRi"]
     },
     "source type": {
       "type": "string",
@@ -59,7 +63,7 @@
         "file_location": { "type": "string" },
         "genome_assembly": {
           "type": "string",
-          "enum": ["GRCh37", "GRCh38"]
+          "enum": ["hg19", "hg38"]
         }
       }
     }

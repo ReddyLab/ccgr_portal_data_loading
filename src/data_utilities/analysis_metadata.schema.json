@@ -16,7 +16,7 @@
     },
     "genome_assembly": {
       "type": "string",
-      "enum": ["GRCh37", "GRCh38"]
+      "enum": ["hg19", "hg38"]
     },
     "p_val_adj_method": {
       "type": "string"
