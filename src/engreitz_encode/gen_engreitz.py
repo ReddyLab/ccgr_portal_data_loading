@@ -63,7 +63,8 @@ GOOD_ENGREITZ_EXPERIMENTS = {
     "ENCSR954IYH",
 }
 GRCH37 = "GRCh37"
-GRCH37_ASSEMBLIES = {GRCH37, "hg19"}
+HG19 = "hg19"
+GRCH37_ASSEMBLIES = {GRCH37, HG19}
 TISSUE_TYPES = {"K562": "Bone Marrow"}
 P_VAL_THRESHOLD = 0.05
 TESTED_ELEMENTS_FILE = "tested_elements.tsv"
@@ -333,7 +334,7 @@ def gen_analysis_data(guides_file, dhs_file, results_file, strand_file):
 
 def normalize_assembly(assembly):
     if assembly in GRCH37_ASSEMBLIES:
-        return GRCH37
+        return HG19
 
     raise ValueError(f"Invalid assembly {assembly}")
 

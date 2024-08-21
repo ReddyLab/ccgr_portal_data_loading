@@ -22,13 +22,17 @@ def __(Path):
 
     GRCH38 = "GRCh38"
     GRCH37 = "GRCh37"
-    GRCH38_ASSEMBLIES = {GRCH38, "hg39"}
-    GRCH37_ASSEMBLIES = {GRCH37, "hg19"}
+    HG38 = "hg38"
+    HG19 = "hg19"
+    GRCH38_ASSEMBLIES = {GRCH38, HG38}
+    GRCH37_ASSEMBLIES = {GRCH37, HG19}
     return (
         GRCH37,
         GRCH37_ASSEMBLIES,
         GRCH38,
         GRCH38_ASSEMBLIES,
+        HG19,
+        HG38,
         curr_dir,
         json_files,
     )
@@ -65,12 +69,12 @@ def __():
 
 
 @app.cell
-def __(GRCH37, GRCH37_ASSEMBLIES, GRCH38, GRCH38_ASSEMBLIES):
+def __(GRCH37_ASSEMBLIES, GRCH38_ASSEMBLIES, HG19, HG38):
     def normalize_assembly(assembly):
         if assembly in GRCH38_ASSEMBLIES:
-            return GRCH38
+            return HG38
         elif assembly in GRCH37_ASSEMBLIES:
-            return GRCH37
+            return HG19
 
         raise ValueError(f"Invalid assembly {assembly}")
 
