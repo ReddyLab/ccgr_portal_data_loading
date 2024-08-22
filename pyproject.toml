@@ -15,7 +15,8 @@ ccgr_av = "data_utilities.analysis_validation:run_cli"
 ccgr_ev = "data_utilities.experiment_validation:run_cli"
 ccgr_mv = "data_utilities.metadata_validation:run_cli"
 dl_series = "encode.download_series:run_cli"
-gen_engreitz = "engreitz_encode.gen_engreitz:run_cli"
+gen_engreitz = "encode.engreitz.gen_engreitz:run_cli"
+gen_encode_myc = "encode.myc.myc:run_cli"
 
 [tool.setuptools.packages.find]
 where = ["src"]

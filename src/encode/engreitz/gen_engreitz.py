@@ -15,6 +15,7 @@ import httpx
 
 from data_utilities.experiment_validation import FIELD_NAMES as EXPERIMENT_FIELD_NAMES
 from data_utilities.analysis_validation import FIELD_NAMES as ANALYSIS_FIELD_NAMES
+from encode import ScreenMetadata, TESTED_ELEMENTS_FILE, OBSERVATIONS_FILE
 
 # These experiments have bad data -- the files are the wrong format
 # and don't contain all the necessary information for
@@ -62,13 +63,6 @@ GOOD_ENGREITZ_EXPERIMENTS = {
     "ENCSR922PHL",
     "ENCSR954IYH",
 }
-GRCH37 = "GRCh37"
-HG19 = "hg19"
-GRCH37_ASSEMBLIES = {GRCH37, HG19}
-TISSUE_TYPES = {"K562": "Bone Marrow"}
-P_VAL_THRESHOLD = 0.05
-TESTED_ELEMENTS_FILE = "tested_elements.tsv"
-OBSERVATIONS_FILE = "observations.tsv"
 
 
 def first(iterable, test):
@@ -332,106 +326,6 @@ def gen_analysis_data(guides_file, dhs_file, results_file, strand_file):
     strand_tsv.close()
 
 
-def normalize_assembly(assembly):
-    if assembly in GRCH37_ASSEMBLIES:
-        return HG19
-
-    raise ValueError(f"Invalid assembly {assembly}")
-
-
-def get_source_type(element_reference):
-    source_types = element_reference.get("elements_selection_method")
-    if source_types is None:
-        return "Tested Element"
-
-    st_set = set(source_types)
-    if "accessible genome regions" in st_set:
-        return "Chromatin Accessible Region"
-
-    if "candidate cis-regulatory elements" in st_set:
-        return "cCRE"
-
-    if "DNase hypersensitive sites" in st_set:
-        return "DHS"
-
-    return "Tested Element"
-
-
-def get_assembly(screen_info):
-    if len(screen_info["assembly"]) > 0:
-        assembly = screen_info["assembly"][0]
-    else:
-        assembly = screen_info["elements_references"][0]["assembly"][0]
-
-    return assembly
-
-
-def get_analysis_files(screen_info):
-    af_accessions = screen_info["analyses"][0]["files"]
-    return [file for file in screen_info["files"] if file["@id"] in af_accessions]
-
-
-def build_experiment(screen_info, output_dir: Path):
-    gene_assembly = normalize_assembly(get_assembly(screen_info))
-
-    cell_line = screen_info["biosample_ontology"][0]["term_name"]
-    tissue_type = TISSUE_TYPES[cell_line]
-    crispr = screen_info["related_datasets"][0]["perturbation_type"]
-
-    create_date = datetime.fromisoformat(screen_info["date_created"])
-
-    ref_files = screen_info["elements_references"][0]["files"]
-    guides_file = [f for f in ref_files if "guide" in f["aliases"][0]][0]
-
-    # CRISPRi Flow-FISH screen of multiple loci in K562 with PrimeFlow readout of PQBP1
-    experiment = {
-        "name": f"{crispr} {screen_info['assay_title'][0]} in {cell_line}",
-        "description": screen_info.get("biosample_summary"),
-        "biosamples": [{"cell_type": cell_line, "tissue_type": tissue_type}],
-        "assay": screen_info["assay_title"][0],
-        "source type": "gRNA",
-        "parent source type": get_source_type(screen_info["elements_references"][0]),
-        "year": str(create_date.year),
-        "lab": screen_info["lab"]["title"],
-        "tested_elements_file": {
-            "description": guides_file["aliases"][0],
-            "filename": TESTED_ELEMENTS_FILE,
-            "file_location": str((output_dir / Path(TESTED_ELEMENTS_FILE)).absolute()),
-            "genome_assembly": gene_assembly,
-        },
-    }
-
-    return experiment
-
-
-def build_analysis(screen_info, output_dir: Path):
-    gene_assembly = normalize_assembly(get_assembly(screen_info))
-
-    af = get_analysis_files(screen_info)
-    q_file = first(af, lambda x: x["output_category"] == "quantification")
-    crispr = screen_info["related_datasets"][0]["perturbation_type"]
-    cell_line = screen_info["biosample_ontology"][0]["term_name"]
-
-    analysis = {
-        "name": f"{crispr} {screen_info['assay_title'][0]} in {cell_line}",
-        "description": screen_info.get("biosample_summary"),
-        "source type": "gRNA",
-        "genome_assembly": gene_assembly,
-        "p_val_adj_method": "Benjamini-Hochberg",
-        "p_val_threshold": 0.05,
-        "results": {
-            "description": f"{q_file['output_type'].capitalize()}\nFrom Ben Doughty, via Email:\nFor the effect size calculations, since we do a 6-bin sort, we don't actually compute a log2-fold change. Instead, we use the data to compute an effect size in \"gene expression\" space, which we normalize to the negative controls. The values are then scaled, so what an effect size of -0.2 means is that this guide decreased the expression of the target gene by 20%. An effect size of 0 would be no change in expression, and an effect size of +0.1 would mean a 10% increase in expression. The lowest we can go is -1 (which means total elimination of signal), and technically the effect size is unbounded in the positive direction, although we never see _super_ strong positive guides with CRISPRi. ",
-            "filename": OBSERVATIONS_FILE,
-            "file_location": str((output_dir / Path(OBSERVATIONS_FILE)).absolute()),
-        },
-    }
-
-    if (desc := screen_info.get("description")) is not None:
-        analysis["description"] = desc
-
-    return analysis
-
-
 # Guides
 def get_guides_file_url(screen) -> str:
     ref_files = screen["elements_references"][0]["files"]
@@ -528,8 +422,9 @@ async def gen_data(metadata_path, output_path) -> tuple[Optional[dict], Optional
         tested_elements_file.close()
         observations_file.close()
 
-        expr_metadata = build_experiment(screen, expr_dir)
-        analysis_metadata = build_analysis(screen, expr_dir)
+        metadata = ScreenMetadata(screen)
+        expr_metadata = metadata.build_experiment(expr_dir)
+        analysis_metadata = metadata.build_analysis(expr_dir)
 
         metadata_paths.append(write_experiment(expr_metadata, analysis_metadata, expr_dir))
 
