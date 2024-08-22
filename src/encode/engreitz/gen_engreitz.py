@@ -65,12 +65,6 @@ GOOD_ENGREITZ_EXPERIMENTS = {
 }
 
 
-def first(iterable, test):
-    for x in iterable:
-        if test(x):
-            return x
-
-
 def gen_experiment_data(guides_file, dhs_file, results_file, strand_file):
     # The experiment data requires 4 files from the ENCODE data set:
     # 1) element quantifications aka results_file
