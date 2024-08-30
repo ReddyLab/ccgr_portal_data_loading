@@ -4,6 +4,7 @@ import csv
 import json
 import os.path
 import re
+import ssl
 import tempfile
 from datetime import datetime
 from collections import defaultdict
@@ -12,6 +13,7 @@ from pathlib import Path
 from typing import Optional
 
 import httpx
+import truststore
 
 from data_utilities.experiment_validation import FIELD_NAMES as EXPERIMENT_FIELD_NAMES
 from data_utilities.analysis_validation import FIELD_NAMES as ANALYSIS_FIELD_NAMES
@@ -349,11 +351,11 @@ def get_guide_quantification_url(screen) -> list[str]:
     ][0]
 
 
-async def download_file(client, url, output_path):
+async def download_file(async_client, url, output_path):
     # Don't re-download files we've already downloaded
     if Path(output_path).exists():
         return
-    response = await client.get(url, timeout=5)
+    response = await async_client.get(url, timeout=5)
     with open(output_path, "w", encoding="utf-8") as output:
         output.write(response.content.decode())
 
@@ -403,7 +405,8 @@ async def gen_data(metadata_path, output_path) -> tuple[Optional[dict], Optional
             guide_strand_file = temp_dir / Path(os.path.basename(guide_strand_url))
             downloads.append((guide_strand_url, guide_strand_file))
 
-            async with httpx.AsyncClient() as client:
+            ssl_context = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+            async with httpx.AsyncClient(verify=ssl_context) as client:
                 tasks = [asyncio.create_task(download_file(client, url, file)) for url, file in downloads]
                 await asyncio.wait(tasks)
 
