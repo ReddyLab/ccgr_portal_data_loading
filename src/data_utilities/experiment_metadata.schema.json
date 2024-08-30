@@ -28,7 +28,7 @@
       "type": "string",
       "enum": [
         "Perturb-Seq",
-        "Proliferation Screen",
+        "Proliferation screen",
         "ATAC-STARR-seq",
         "Flow-FISH CRISPR screen"
       ]
