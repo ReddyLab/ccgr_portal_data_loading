@@ -65,6 +65,7 @@ GOOD_ENGREITZ_EXPERIMENTS = {
     "ENCSR922PHL",
     "ENCSR954IYH",
 }
+P_VAL_THRESHOLD = 0.05
 
 
 def gen_experiment_data(guides_file, dhs_file, results_file, strand_file):
