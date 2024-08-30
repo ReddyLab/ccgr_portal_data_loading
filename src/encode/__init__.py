@@ -1,6 +1,7 @@
 from datetime import datetime
 from functools import cached_property
 from pathlib import Path
+from typing import Optional
 
 
 GRCH37 = "GRCh37"
@@ -9,7 +10,18 @@ HG19 = "hg19"
 HG38 = "hg38"
 GRCH37_ASSEMBLIES = {GRCH37, HG19}
 GRCH38_ASSEMBLIES = {GRCH38, HG38}
-TISSUE_TYPES = {"K562": "Bone Marrow"}
+TISSUE_TYPES = {
+    "K562": "Bone Marrow",
+    "MCF-7": "Breast",
+    "HCT116": "Colon",
+    "DU 145": "Prostate",
+    "A549": "Lung",
+    "NCI-H460": "Lung",
+    "PC-3": "Prostate",
+    "MDA-MB-231": "Breast",
+    "HepG2": "Liver",
+    "SW620": "Colon",
+}
 TESTED_ELEMENTS_FILE = "tested_elements.tsv"
 OBSERVATIONS_FILE = "observations.tsv"
 
@@ -26,7 +38,7 @@ class ScreenMetadata:
 
     @cached_property
     def name(self):
-        return f"{self.screen_info["related_datasets"][0]["perturbation_type"]} { self.screen_info['assay_title'][0]} in {self.cell_line}"
+        return f"{self.screen_info['related_datasets'][0]['perturbation_type']} {self.screen_info['assay_title'][0]} in {self.cell_line}"
 
     @cached_property
     def description(self):
@@ -70,11 +82,11 @@ class ScreenMetadata:
         return self.screen_info["lab"]["title"]
 
     @property
-    def source_type(self):
+    def source_type(self) -> str:
         return "gRNA"
 
     @cached_property
-    def parent_source_type(self):
+    def parent_source_type(self) -> Optional[str]:
         return self._get_source_type(self.screen_info["elements_references"][0])
 
     @cached_property
@@ -85,12 +97,12 @@ class ScreenMetadata:
         return guides_file["aliases"][0]
 
     @cached_property
-    def results_description(self):
+    def results_description(self) -> str:
         af = self._get_analysis_files()
         q_file = first(af, lambda x: x["output_category"] == "quantification")
         header = "" if q_file is None else f"{q_file['output_type'].capitalize()}\n"
 
-        return f"{header}From Ben Doughty, via Email:\nFor the effect size calculations, since we do a 6-bin sort, we don't actually compute a log2-fold change. Instead, we use the data to compute an effect size in \"gene expression\" space, which we normalize to the negative controls. The values are then scaled, so what an effect size of -0.2 means is that this guide decreased the expression of the target gene by 20%. An effect size of 0 would be no change in expression, and an effect size of +0.1 would mean a 10% increase in expression. The lowest we can go is -1 (which means total elimination of signal), and technically the effect size is unbounded in the positive direction, although we never see _super_ strong positive guides with CRISPRi. ",
+        return f'{header}From Ben Doughty, via Email:\nFor the effect size calculations, since we do a 6-bin sort, we don\'t actually compute a log2-fold change. Instead, we use the data to compute an effect size in "gene expression" space, which we normalize to the negative controls. The values are then scaled, so what an effect size of -0.2 means is that this guide decreased the expression of the target gene by 20%. An effect size of 0 would be no change in expression, and an effect size of +0.1 would mean a 10% increase in expression. The lowest we can go is -1 (which means total elimination of signal), and technically the effect size is unbounded in the positive direction, although we never see _super_ strong positive guides with CRISPRi. '
 
     @property
     def p_val_adj_method(self):
@@ -129,9 +141,8 @@ class ScreenMetadata:
             "name": self.name,
             "description": self.summary,
             "biosamples": [{"cell_type": self.cell_line, "tissue_type": self.tissue_type}],
-            "assay": self.assembly,
+            "assay": self.assay,
             "source type": self.source_type,
-            "parent source type": self.parent_source_type,
             "year": str(create_date.year),
             "lab": self.lab,
             "tested_elements_file": {
@@ -141,6 +152,9 @@ class ScreenMetadata:
                 "genome_assembly": self.assembly,
             },
         }
+
+        if self.parent_source_type is not None:
+            experiment["parent source type"] = self.parent_source_type
 
         return experiment
 
