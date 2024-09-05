@@ -4,3 +4,4 @@ temp_data
 .vscode
 __pycache__
 build
+*_out
