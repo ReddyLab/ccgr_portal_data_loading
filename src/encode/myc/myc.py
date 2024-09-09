@@ -46,7 +46,9 @@ class MycMetadata(ScreenMetadata):
     @cached_property
     def guide_quantification_url(self) -> str:
         return [
-            file["cloud_metadata"]["url"] for file in self.screen_info["files"] if file["output_type"] == "element quantifications"
+            file["cloud_metadata"]["url"]
+            for file in self.screen_info["files"]
+            if file["output_type"] == "element quantifications"
         ][0]
 
 
@@ -208,6 +210,7 @@ def line_to_data(line: list[str]) -> EncodeData:
         significant=significant,
     )
 
+
 def download_file(url, output_path):
     ssl_context = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     with httpx.Client(verify=ssl_context) as client:
@@ -226,7 +229,11 @@ def read_data(metadata, output_directory):
 
         download_file(guides_url, guides_file)
 
-        with gzip.open(guides_file, mode="rt", encoding="utf8") if guides_url.endswith(".gz") else open(guides_file, encoding="utf8") as input_file:
+        with (
+            gzip.open(guides_file, mode="rt", encoding="utf8")
+            if guides_url.endswith(".gz")
+            else open(guides_file, encoding="utf8")
+        ) as input_file:
             reader = csv.reader(input_file, delimiter="\t")
             line = next(reader)
             if line[0] != "chrom":
@@ -238,11 +245,15 @@ def read_data(metadata, output_directory):
 
 def gen_data(results_gen, output_directory):
     tested_elements_file = open(output_directory / Path(TESTED_ELEMENTS_FILE), "w", encoding="utf-8")
-    tested_elements_csv = csv.DictWriter(tested_elements_file, fieldnames=EXPERIMENT_FIELD_NAMES, delimiter="\t", quoting=csv.QUOTE_NONE)
+    tested_elements_csv = csv.DictWriter(
+        tested_elements_file, fieldnames=EXPERIMENT_FIELD_NAMES, delimiter="\t", quoting=csv.QUOTE_NONE
+    )
     tested_elements_csv.writeheader()
 
     observations_file = open(output_directory / Path(OBSERVATIONS_FILE), "w", encoding="utf-8")
-    observations_csv = csv.DictWriter(observations_file, fieldnames=ANALYSIS_FIELD_NAMES, delimiter="\t", quoting=csv.QUOTE_NONE)
+    observations_csv = csv.DictWriter(
+        observations_file, fieldnames=ANALYSIS_FIELD_NAMES, delimiter="\t", quoting=csv.QUOTE_NONE
+    )
     observations_csv.writeheader()
 
     for result in results_gen:
