@@ -11,6 +11,8 @@ import requests
 
 JSON_MIME = "application/json"
 
+BLANK_ACCESSION = ["", None]
+
 URLString: TypeAlias = str
 CSRFToken: TypeAlias = str
 
@@ -21,13 +23,22 @@ def is_url(path: str):
 
 @dataclass(init=False)
 class Metadata:
-    accession_id: str
+    accession_id: Optional[str]
+    compressed_data_url: Optional[str] = None
+    compressed_data_file: Optional[str] = None
     experiment_metadata_url: Optional[str] = None
     experiment_metadata_file: Optional[str] = None
     analysis_metadata_url: Optional[str] = None
     analysis_metadata_file: Optional[str] = None
 
-    def __init__(self, accession_id, experiment_path: Optional[str], analysis_path: Optional[str]):
+    def __init__(
+        self,
+        accession_id,
+        experiment_path: Optional[str] = None,
+        analysis_path: Optional[str] = None,
+        compressed_path: Optional[str] = None,
+    ):
+
         self.accession_id = accession_id
 
         if experiment_path is not None:
@@ -42,14 +53,27 @@ class Metadata:
             else:
                 self.analysis_metadata_file = analysis_path
 
+        if compressed_path is not None:
+            if is_url(compressed_path):
+                self.compressed_data_url = compressed_path
+            else:
+                self.compressed_data_file = compressed_path
+
     def __str__(self):
         experiment = (
             self.experiment_metadata_file if self.experiment_metadata_file is not None else self.experiment_metadata_url
         )
+        experiment_string = "" if experiment is None else f" {experiment}"
+
         analysis = (
             self.analysis_metadata_file if self.analysis_metadata_file is not None else self.analysis_metadata_url
         )
-        return f"{self.accession_id}: {experiment} {analysis}"
+        analysis_string = "" if analysis is None else f" {analysis}"
+
+        compressed = self.compressed_data_file if self.compressed_data_file is not None else self.compressed_data_url
+        compressed_string = "" if compressed is None else f" {compressed}"
+
+        return f"{self.accession_id}: {experiment_string} {analysis_string} {compressed_string}"
 
 
 class UploadSession:
@@ -70,6 +94,9 @@ class UploadSession:
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
+        if self.session is None:
+            raise RuntimeError("Please use UploadSession as a Context Manager")
+
         self.session.close()
 
     def _check_response_status(self, response: requests.Response):
@@ -77,16 +104,25 @@ class UploadSession:
             raise RuntimeError(f"Bad Response Code: {response.status_code} ({response.request.method} {response.url})")
 
     def _get_login_csrf(self) -> CSRFToken:
+        if self.session is None:
+            raise RuntimeError("Please use UploadSession as a Context Manager")
+
         r = self.session.get(self.login_url)
         self._check_response_status(r)
         return r.cookies["csrftoken"]
 
     def _get_upload_csrf(self) -> CSRFToken:
+        if self.session is None:
+            raise RuntimeError("Please use UploadSession as a Context Manager")
+
         r = self.session.get(self.upload_url)
         self._check_response_status(r)
         return r.cookies["csrftoken"]
 
     def login(self, username, password):
+        if self.session is None:
+            raise RuntimeError("Please use UploadSession as a Context Manager")
+
         csrf_token = self._get_login_csrf()
         login = self.session.post(
             self.login_url,
@@ -100,6 +136,9 @@ class UploadSession:
         self._check_response_status(login)
 
     def upload(self, metadata: list[Metadata]):
+        if self.session is None:
+            raise RuntimeError("Please use UploadSession as a Context Manager")
+
         for metadatum in metadata:
             csrf_token = self._get_upload_csrf()
             print(f"Uploading {metadatum}")
@@ -129,6 +168,14 @@ class UploadSession:
                 if isinstance(metadatum.analysis_metadata_url, str):
                     data["analysis_url"] = metadatum.analysis_metadata_url
 
+            if metadatum.compressed_data_file is not None:
+                if isinstance(metadatum.compressed_data_file, str):
+                    files["full_file"] = open(metadatum.compressed_data_file, "rb")
+
+            if metadatum.compressed_data_url is not None:
+                if isinstance(metadatum.compressed_data_url, str):
+                    data["full_url"] = metadatum.compressed_data_url
+
             #
             # Upload the metadata
             #
@@ -146,6 +193,8 @@ class UploadSession:
             if (file := files.get("experiment_file")) is not None:
                 file.close()
             if (file := files.get("analysis_file")) is not None:
+                file.close()
+            if (file := files.get("full_file")) is not None:
                 file.close()
 
             #
@@ -167,6 +216,8 @@ class UploadSession:
                         message = "Finished Successfully"
                     case "E":
                         message = f"Server Error: {status_result['error_message']}"
+                    case _:
+                        raise ValueError(f'Unknown status "{status}"')
 
                 if status not in statuses:
                     print(message)
@@ -191,6 +242,10 @@ def full_hostname(hostname: str) -> URLString:
 
 def next_accession(accession: str) -> str:
     match = re.fullmatch(r"DCPEXPR([\da-fA-F]{10})", accession)
+
+    if match is None:
+        raise ValueError(f"Could not match accession {accession}")
+
     number = int(match.group(1), base=16) + 1
 
     return f"DCPEXPR{number:010X}"
@@ -227,8 +282,7 @@ def read_metadata_list(metadata_file: str) -> list[Metadata]:
 
             # If the row doesn't define an accession ID figure out what
             # it should be
-            if accession in ["", None]:
-                assert prev_accession is not None
+            if accession in ["", None] and prev_accession not in BLANK_ACCESSION:
                 accession = next_accession(prev_accession)
 
             prev_accession = accession
@@ -250,9 +304,51 @@ def read_metadata_list(metadata_file: str) -> list[Metadata]:
     return metadata
 
 
+# TSV of compressed full data sets:
+#
+# Accession ID\tcompressed file
+#
+# If an accession id is not set, use the previous accession id + 1
+# Skip blank lines
+# Skip lines that start with '#'
+#
+def read_compressed_list(metadata_file: str) -> list[Metadata]:
+    metadata = []
+    prev_accession = None
+    with open(metadata_file, encoding="utf-8") as metadata_tsv:
+        reader = csv.reader(metadata_tsv, delimiter="\t")
+        for row in reader:
+            # Skip if the row doesn't have the right number of columns
+            try:
+                accession, compressed_path = row
+            except ValueError:
+                continue
+
+            # skip if the row is blank, minus the tabs
+            if accession == compressed_path == "":
+                continue
+
+            # skip if the row is commented out
+            if accession.startswith("#"):
+                continue
+
+            # If the row doesn't define an accession ID figure out what
+            # it should be
+            if accession in ["", None] and prev_accession not in BLANK_ACCESSION:
+                accession = next_accession(prev_accession)
+
+            prev_accession = accession
+
+            metadata.append(Metadata(accession_id=accession, compressed_path=compressed_path))
+
+    return metadata
+
+
 def get_metadata(args: argparse.Namespace) -> list[Metadata]:
-    if args.file is not None:
-        metadata = read_metadata_list(args.file)
+    if args.mfile is not None:
+        metadata = read_metadata_list(args.mfile)
+    elif args.cfile is not None:
+        metadata = read_compressed_list(args.cfile)
     else:
         metadata = [
             Metadata(
@@ -270,11 +366,18 @@ def get_args():
     parser.add_argument("-u", "--username", help="Username", required=True)
     parser.add_argument("-p", "--password", help="Password", required=True)
 
-    bulk = parser.add_argument_group(title="Bulk Experiment/Analysis Upload")
+    bulk = parser.add_argument_group(title="Bulk Experiment/Analysis Metadata Upload")
     bulk.add_argument(
-        "-f",
-        "--file",
+        "-m",
+        "--mfile",
         help="A TSV containing locations of the experiment/analysis metadata needed to load the data",
+    )
+
+    bulk = parser.add_argument_group(title="Bulk Full Experiment/Analysis Upload")
+    bulk.add_argument(
+        "-c",
+        "--cfile",
+        help="A TSV containing locations of full (compressed) sets of experiment/analysis metadata and data",
     )
 
     single = parser.add_argument_group(title="Single Experiment/Analysis Upload")
@@ -284,12 +387,16 @@ def get_args():
 
     ns = parser.parse_args()
 
-    if getattr(ns, "file", None) is not None and (
-        getattr(ns, "accession", None) is not None
-        or getattr(ns, "ef", None) is not None
-        or getattr(ns, "af", None) is not None
-    ):
-        parser.error("Bulk (-f) and Single (-a, --ef, --af) Uploads are mututally exclusive")
+    if (
+        int(getattr(ns, "mfile", None) is not None)
+        + int(getattr(ns, "cfile", None) is not None)
+        + int(
+            getattr(ns, "accession", None) is not None
+            or getattr(ns, "ef", None) is not None
+            or getattr(ns, "af", None) is not None
+        )
+    ) != 1:
+        parser.error("Bulk (-m), Compressed (-c) and Single (-a, --ef, --af) Uploads are mututally exclusive")
 
     return ns
 
