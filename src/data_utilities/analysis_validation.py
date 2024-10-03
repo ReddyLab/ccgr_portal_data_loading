@@ -7,7 +7,6 @@ import sys
 
 from . import (
     ErrorSet,
-    validate_bounds,
     validate_chrom,
     validate_facets,
     validate_fieldnames,
@@ -20,7 +19,6 @@ FIELD_NAMES = [
     "start",
     "end",
     "strand",
-    "bounds",
     "gene_name",
     "gene_ensembl_id",
     "raw_p_val",
@@ -61,9 +59,6 @@ def validate_data(reader):
 
         if not validate_strand(line["strand"]):
             errors.add(f"Invalid strand: {line['strand']} (line {i})")
-
-        if not validate_bounds(line["bounds"]):
-            errors.add(f"Invalid bounds: {line['bounds']} (line {i})")
 
         if not validate_gene_name(line["gene_name"]):
             errors.add(f"Invalid gene name: {line['gene_name']} (line {i})")

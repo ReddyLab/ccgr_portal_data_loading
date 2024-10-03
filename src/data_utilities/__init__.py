@@ -1,7 +1,6 @@
 import re
 
 VALID_STRANDS = {".", "+", "-"}
-VALID_BOUNDS = {"[]", "()", "[)", "(]"}
 
 
 class ErrorSet:
@@ -45,10 +44,6 @@ def validate_location(start: str, end: str):
 
 def validate_strand(strand: str):
     return strand in VALID_STRANDS
-
-
-def validate_bounds(bounds: str):
-    return bounds in VALID_BOUNDS
 
 
 def validate_facets(key_values: str):

@@ -6,7 +6,6 @@ import sys
 
 from . import (
     ErrorSet,
-    validate_bounds,
     validate_chrom,
     validate_facets,
     validate_fieldnames,
@@ -19,12 +18,10 @@ FIELD_NAMES = [
     "start",
     "end",
     "strand",
-    "bounds",
     "parent_chrom",
     "parent_start",
     "parent_end",
     "parent_strand",
-    "parent_bounds",
     "facets",
     "misc",
 ]
@@ -54,17 +51,7 @@ def validate_data(reader):
         if not validate_strand(line["strand"]):
             errors.add(f"Invalid strand: {line['strand']} (line {i})")
 
-        if not validate_bounds(line["bounds"]):
-            errors.add(f"Invalid bounds: {line['bounds']} (line {i})")
-
-        if not (
-            line["parent_chrom"]
-            == line["parent_start"]
-            == line["parent_end"]
-            == line["parent_strand"]
-            == line["parent_bounds"]
-            == ""
-        ):
+        if not (line["parent_chrom"] == line["parent_start"] == line["parent_end"] == line["parent_strand"] == ""):
             if not validate_chrom(line["parent_chrom"]):
                 errors.add(f"Invalid chromosome: {line['chrom']}")
 
@@ -73,9 +60,6 @@ def validate_data(reader):
 
             if not validate_strand(line["parent_strand"]):
                 errors.add(f"Invalid parent strand: {line['parent_strand']} (line {i})")
-
-            if not validate_bounds(line["bounds"]):
-                errors.add(f"Invalid parent bounds: {line['parent_bounds']} (line {i})")
 
         if line["facets"] != "" and not validate_facets(line["facets"]):
             errors.add(f"Invalid facets: {line['facets']} (line {i})")

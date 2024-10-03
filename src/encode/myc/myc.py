@@ -91,7 +91,6 @@ class EncodeData:
             "start": self.start,
             "end": self.end,
             "strand": self.strand if self.strand is not None else ".",
-            "bounds": "[)",
         }
 
     def observation_data(self):
@@ -100,7 +99,6 @@ class EncodeData:
             "start": self.start,
             "end": self.end,
             "strand": self.strand if self.strand is not None else ".",
-            "bounds": "[)",
             "raw_p_val": self.p_value,
             "adj_p_val": self.adjusted_p_value,
             "effect_size": self.effect_size,
