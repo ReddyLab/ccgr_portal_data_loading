@@ -33,9 +33,9 @@
         "Flow-FISH CRISPR screen"
       ]
     },
-    "crispr": {
+    "functional_characterization_modality": {
       "type": "string",
-      "enum": ["CRISPRa", "CRISPRi"]
+      "enum": ["Reporter Assay", "CRISPRa", "CRISPRi"]
     },
     "source type": {
       "type": "string",

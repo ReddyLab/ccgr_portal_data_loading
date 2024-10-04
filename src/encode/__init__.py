@@ -38,7 +38,7 @@ class ScreenMetadata:
 
     @cached_property
     def name(self):
-        return f"{self.screen_info['related_datasets'][0]['perturbation_type']} {self.screen_info['assay_title'][0]} in {self.cell_line}"
+        return f"{self.functional_characterization} {self.screen_info['assay_title'][0]} in {self.cell_line}"
 
     @cached_property
     def description(self):
@@ -80,6 +80,13 @@ class ScreenMetadata:
     @cached_property
     def lab(self):
         return self.screen_info["lab"]["title"]
+
+    @cached_property
+    def functional_characterization(self):
+        try:
+            return self.screen_info["related_datasets"][0]["perturbation_type"]
+        except:
+            return None
 
     @property
     def source_type(self) -> str:
@@ -136,7 +143,6 @@ class ScreenMetadata:
     def build_experiment(self, output_dir: Path):
         create_date = datetime.fromisoformat(self.screen_info["date_created"])
 
-        # CRISPRi Flow-FISH screen of multiple loci in K562 with PrimeFlow readout of PQBP1
         experiment = {
             "name": self.name,
             "description": self.summary,
@@ -145,6 +151,7 @@ class ScreenMetadata:
             "source type": self.source_type,
             "year": str(create_date.year),
             "lab": self.lab,
+            "functional_characterization_modality": self.functional_characterization,
             "tested_elements_file": {
                 "description": self.tested_elements_description,
                 "filename": TESTED_ELEMENTS_FILE,
