@@ -14,9 +14,10 @@ from typing import Optional
 import httpx
 import truststore
 
+from data_utilities import TESTED_ELEMENTS_FILE, OBSERVATIONS_FILE
 from data_utilities.experiment_validation import FIELD_NAMES as EXPERIMENT_FIELD_NAMES
 from data_utilities.analysis_validation import FIELD_NAMES as ANALYSIS_FIELD_NAMES
-from encode import ScreenMetadata, TESTED_ELEMENTS_FILE, OBSERVATIONS_FILE, first
+from encode import ScreenMetadata, first
 
 
 class MycMetadata(ScreenMetadata):

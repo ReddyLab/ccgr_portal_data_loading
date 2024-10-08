@@ -1,5 +1,7 @@
 import re
 
+TESTED_ELEMENTS_FILE = "tested_elements.tsv"
+OBSERVATIONS_FILE = "observations.tsv"
 VALID_STRANDS = {".", "+", "-"}
 
 
