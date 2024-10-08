@@ -4,6 +4,7 @@ import argparse
 import csv
 import re
 import sys
+from enum import StrEnum
 
 from . import (
     ErrorSet,
@@ -14,20 +15,23 @@ from . import (
     validate_strand,
 )
 
-FIELD_NAMES = [
-    "chrom",
-    "start",
-    "end",
-    "strand",
-    "gene_name",
-    "gene_ensembl_id",
-    "raw_p_val",
-    "adj_p_val",
-    "effect_size",
-    "facets",
-]
 
-FIELD_NAMES_SET = set(FIELD_NAMES)
+class AnalysisField(StrEnum):
+    CHROM = "chrom"
+    START = "start"
+    END = "end"
+    STRAND = "strand"
+    GENE_NAME = "gene_name"
+    GENE_ENSEMBL_ID = "gene_ensembl_id"
+    RAW_P_VAL = "raw_p_val"
+    ADJ_P_VAL = "adj_p_val"
+    EFFECT_SIZE = "effect_size"
+    FACETS = "facets"
+
+
+FIELD_NAMES = list(AnalysisField)
+
+FIELD_NAMES_SET = set(AnalysisField)
 
 
 def validate_gene_name(gene_name: str):

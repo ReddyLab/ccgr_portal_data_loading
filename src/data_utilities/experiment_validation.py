@@ -3,6 +3,7 @@
 import argparse
 import csv
 import sys
+from enum import StrEnum
 
 from . import (
     ErrorSet,
@@ -13,20 +14,23 @@ from . import (
     validate_strand,
 )
 
-FIELD_NAMES = [
-    "chrom",
-    "start",
-    "end",
-    "strand",
-    "parent_chrom",
-    "parent_start",
-    "parent_end",
-    "parent_strand",
-    "facets",
-    "misc",
-]
 
-FIELD_NAMES_SET = set(FIELD_NAMES)
+class ExperimentField(StrEnum):
+    CHROM = "chrom"
+    START = "start"
+    END = "end"
+    STRAND = "strand"
+    PARENT_CHROM = "parent_chrom"
+    PARENT_START = "parent_start"
+    PARENT_END = "parent_end"
+    PARENT_STRAND = "parent_strand"
+    FACETS = "facets"
+    MISC = "misc"
+
+
+FIELD_NAMES = list(ExperimentField)
+
+FIELD_NAMES_SET = set(ExperimentField)
 
 
 def validate_misc(key_values: str):
