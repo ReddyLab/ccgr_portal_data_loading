@@ -78,7 +78,7 @@ def get_args():
         "--genes",
         required=True,
         type=argparse.FileType(encoding="utf-8"),
-        description="gene name -> encode id mapping",
+        help="gene name -> encode id mapping",
     )
     return parser.parse_args()
 
