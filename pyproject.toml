@@ -17,6 +17,7 @@ ccgr_mv = "data_utilities.metadata_validation:run_cli"
 dl_series = "encode.download_series:run_cli"
 gen_engreitz = "encode.engreitz.gen_engreitz:run_cli"
 gen_encode_myc = "encode.myc.myc:run_cli"
+gen_reddylab = "reddylab:run_cli"
 
 [tool.setuptools.packages.find]
 where = ["src"]

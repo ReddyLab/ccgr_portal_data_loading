@@ -22,8 +22,6 @@ TISSUE_TYPES = {
     "HepG2": "Liver",
     "SW620": "Colon",
 }
-TESTED_ELEMENTS_FILE = "tested_elements.tsv"
-OBSERVATIONS_FILE = "observations.tsv"
 
 
 def first(iterable, test):

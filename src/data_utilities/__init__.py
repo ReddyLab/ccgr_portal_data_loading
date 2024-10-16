@@ -1,5 +1,9 @@
 import re
 
+TESTED_ELEMENTS_FILE = "tested_elements.tsv"
+OBSERVATIONS_FILE = "observations.tsv"
+EXPERIMENT_METADATA_FILE = "experiment.json"
+ANALYSIS_METADATA_FILE = "analysis001.json"
 VALID_STRANDS = {".", "+", "-"}
 
 
