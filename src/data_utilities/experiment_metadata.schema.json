@@ -48,11 +48,28 @@
     "year": {
       "type": "string"
     },
-    "experimentalist": {
-      "type": "string"
-    },
-    "PI": {
-      "type": "string"
+    "attribution": {
+      "properties": {
+        "pi": {
+          "type": "string"
+        },
+        "experimentalist": {
+          "type": "string"
+        },
+        "institution": {
+          "type": "string"
+        },
+        "project": {
+          "type": "string"
+        },
+        "datasource_url": {
+          "type": "string"
+        },
+        "lab_url": {
+          "type": "string"
+        }
+      },
+      "required": ["pi", "institution"]
     },
     "tested_elements_file": {
       "properties": {

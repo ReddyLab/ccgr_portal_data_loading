@@ -3,6 +3,8 @@ from functools import cached_property
 from pathlib import Path
 from typing import Optional
 
+from data_utilities import TESTED_ELEMENTS_FILE, OBSERVATIONS_FILE
+
 
 GRCH37 = "GRCh37"
 GRCH38 = "GRCh38"
@@ -77,7 +79,26 @@ class ScreenMetadata:
 
     @cached_property
     def lab(self):
-        return self.screen_info["lab"]["title"]
+        return self.screen_info["lab"]["title"].removesuffix(", Stanford")
+
+    @cached_property
+    def institute(self):
+        i = self.screen_info["lab"]["institute_label"]
+        if i == "":
+            i = self.screen_info["lab"]["institute_name"]
+        return i
+
+    @cached_property
+    def project(self):
+        return self.screen_info["award"]["project"]
+
+    @cached_property
+    def dataset_url(self):
+        return f'https://www.encodeproject.org{self.screen_info["@id"]}'
+
+    @cached_property
+    def lab_url(self):
+        return self.screen_info["lab"].get("url")
 
     @cached_property
     def functional_characterization(self):
@@ -148,8 +169,14 @@ class ScreenMetadata:
             "assay": self.assay,
             "source type": self.source_type,
             "year": str(create_date.year),
-            "lab": self.lab,
             "functional_characterization_modality": self.functional_characterization,
+            "attribution": {
+                "pi": self.lab,
+                "institution": self.institute,
+                "project": self.project,
+                "datasource_url": self.dataset_url,
+                "lab_url": self.lab_url,
+            },
             "tested_elements_file": {
                 "description": self.tested_elements_description,
                 "filename": TESTED_ELEMENTS_FILE,
