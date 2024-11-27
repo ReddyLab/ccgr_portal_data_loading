@@ -1,5 +1,4 @@
 import argparse
-import asyncio
 import csv
 import gzip
 import json
@@ -278,4 +277,4 @@ def run_cli():
     args = get_args()
     args.output_directory.mkdir(exist_ok=True)
     metadata = gen_metadata(args.sm, args.output_directory)
-    metadata_paths = gen_data(read_data(metadata, args.output_directory), args.output_directory)
+    gen_data(read_data(metadata, args.output_directory), args.output_directory)

@@ -6,11 +6,10 @@ import os.path
 import re
 import ssl
 import tempfile
-from datetime import datetime
 from collections import defaultdict
+from functools import cached_property
 from os import SEEK_SET
 from pathlib import Path
-from typing import Optional
 
 import httpx
 import truststore
@@ -340,7 +339,7 @@ def get_elements_file_url(screen) -> str:
 
 
 # This is the results file
-def get_element_quantification_url(screen) -> list[str]:
+def get_element_quantification_url(screen) -> str:
     return [
         file["cloud_metadata"]["url"] for file in screen["files"] if file["output_type"] == "element quantifications"
     ][0]
@@ -348,7 +347,7 @@ def get_element_quantification_url(screen) -> list[str]:
 
 # We only need one because the only reason we use this is to get the
 # guide strand
-def get_guide_quantification_url(screen) -> list[str]:
+def get_guide_quantification_url(screen) -> str:
     return [
         file["cloud_metadata"]["url"]
         for file in screen["related_datasets"][0]["files"]
@@ -365,7 +364,7 @@ async def download_file(async_client, url, output_path):
         output.write(response.content.decode())
 
 
-async def gen_data(metadata_path, output_path) -> tuple[Optional[dict], Optional[dict]]:
+async def gen_data(metadata_path, output_path):
     curr_dir = Path(metadata_path)
     json_files = list(curr_dir.glob("*.json"))
 
@@ -460,4 +459,4 @@ def write_experiment(experiment_metadata, analysis_metadata, output_directory):
 
 def run_cli():
     args = get_args()
-    metadata_paths = asyncio.run(gen_data(args.metadata_path, args.output_directory))
+    asyncio.run(gen_data(args.metadata_path, args.output_directory))
