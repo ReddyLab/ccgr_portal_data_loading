@@ -69,6 +69,12 @@ GOOD_ENGREITZ_EXPERIMENTS = {
 P_VAL_THRESHOLD = 0.05
 
 
+class EngreitzScreenMetadata(ScreenMetadata):
+    @cached_property
+    def name(self):
+        return f"{self.functional_characterization} {self.screen_info['assay_title'][0]} in {self.cell_line} for {self.screen_info['examined_loci'][0]['gene']['symbol']} ({self.screen_info['accession']})"
+
+
 def gen_experiment_data(guides_file, dhs_file, results_file, strand_file):
     # The experiment data requires 4 files from the ENCODE data set:
     # 1) element quantifications aka results_file
@@ -418,7 +424,7 @@ async def gen_data(metadata_path, output_path) -> tuple[Optional[dict], Optional
         tested_elements_file.close()
         observations_file.close()
 
-        metadata = ScreenMetadata(screen)
+        metadata = EngreitzScreenMetadata(screen)
         expr_metadata = metadata.build_experiment(expr_dir)
         analysis_metadata = metadata.build_analysis(expr_dir)
 
