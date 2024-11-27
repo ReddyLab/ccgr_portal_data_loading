@@ -52,25 +52,29 @@ class MycMetadata(ScreenMetadata):
             if file["output_type"] == "element quantifications"
         ][0]
 
-
-class BingRenPeakTilingMetadata(MycMetadata):
     @cached_property
     def assay(self):
         return "Proliferation screen"
 
+    @cached_property
+    def lab(self):
+        return self.screen_info["lab"]["title"].removesuffix(", UCSD")
+
+
+class BingRenPeakTilingMetadata(MycMetadata):
     @property
     def p_val_threshold(self):
         return 0.2
 
 
 class BingRenFullTilingMetadata(MycMetadata):
-    @cached_property
-    def assay(self):
-        return "Proliferation screen"
+    pass
 
 
 class PardisSabetiMetadata(MycMetadata):
-    pass
+    @cached_property
+    def lab(self):
+        return self.screen_info["lab"]["title"].removesuffix(", Broad")
 
 
 @dataclass
