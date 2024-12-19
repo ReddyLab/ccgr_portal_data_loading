@@ -10,7 +10,7 @@ def merge_mapping(mapping):
     assert len(mapping) > 0
     new_mapping = list(mapping[0])
     for region in mapping[1:]:
-        if new_mapping[2] - region[1] > 100:
+        if new_mapping[2] - region[1] > 100 or new_mapping[3] != region[3]:
             raise ValueError("big gap")
         new_mapping[2] = region[2]
 
@@ -40,6 +40,12 @@ class Experiment:
         self.unmapped_file = unmapped_file
         self.mapper = mapper
 
+    def _handle_unmapped(self, line):
+        if self.unmapped_file:
+            self.unmapped_file.write(line)
+        else:
+            print(line)
+
     def liftover(self):
         for row in self.experiment_file:
             strand = row["strand"]
@@ -55,10 +61,13 @@ class Experiment:
 
             match len(new_coords):
                 case 0:
-                    if self.unmapped_file:
-                        self.unmapped_file.write(f"base\t{row['chrom']}\t{row['start']}\t{row['end']}\t{strand}")
+                    self._handle_unmapped(f"base\t{row['chrom']}\t{row['start']}\t{row['end']}\t{strand}\n")
                 case _:
-                    new_coords = merge_mapping(new_coords)
+                    try:
+                        new_coords = merge_mapping(new_coords)
+                    except:
+                        self._handle_unmapped(f"base\t{row['chrom']}\t{row['start']}\t{row['end']}\t{strand}\n")
+                        continue
                     new_row.update(
                         {
                             "chrom": new_coords[0],
@@ -76,12 +85,17 @@ class Experiment:
             )[1::2]
             match len(new_parent_coords):
                 case 0:
-                    if self.unmapped_file:
-                        self.unmapped_file.write(
-                            f"parent\t{row['parent_chrom']}\t{row['parent_start']}\t{row['parent_end']}\t{p_strand}"
-                        )
+                    self._handle_unmapped(
+                        f"parent\t{row['parent_chrom']}\t{row['parent_start']}\t{row['parent_end']}\t{p_strand}\n"
+                    )
                 case _:
-                    new_parent_coords = merge_mapping(new_parent_coords)
+                    try:
+                        new_parent_coords = merge_mapping(new_parent_coords)
+                    except:
+                        self._handle_unmapped(
+                            f"parent\t{row['parent_chrom']}\t{row['parent_start']}\t{row['parent_end']}\t{p_strand}\n"
+                        )
+                        continue
                     new_row.update(
                         {
                             "parent_chrom": new_parent_coords[0],
@@ -118,6 +132,12 @@ class Analysis:
         self.unmapped_file = unmapped_file
         self.mapper = mapper
 
+    def _handle_unmapped(self, line):
+        if self.unmapped_file:
+            self.unmapped_file.write(line)
+        else:
+            print(line)
+
     def liftover(self):
         for row in self.analysis_file:
             strand = row["strand"]
@@ -129,16 +149,12 @@ class Analysis:
 
             match len(new_coords):
                 case 0:
-                    if self.unmapped_file:
-                        self.unmapped_file.write(f"{row['chrom']}\t{row['start']}\t{row['end']}\t{strand}")
+                    self._handle_unmapped(f"{row['chrom']}\t{row['start']}\t{row['end']}\t{strand}\n")
                 case _:
                     try:
                         new_coords = merge_mapping(new_coords)
                     except:
-                        n = [(f"{c[0]}:{c[1]}-{c[2]}:{c[3]} ({c[2] - c[1]})") for c in new_coords]
-                        print(
-                            f"{row['chrom']}:{row['start']}-{row['end']}:{strand} ({int(row['end']) - int(row['start'])}) -> {n}"
-                        )
+                        self._handle_unmapped(f"{row['chrom']}\t{row['start']}\t{row['end']}\t{strand}\n")
                         continue
                     self.writer.writerow(
                         {
