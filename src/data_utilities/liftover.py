@@ -51,9 +51,13 @@ class Experiment:
             strand = row["strand"]
             if strand == ".":
                 strand = "+"
-            new_coords = self.mapper.map_coordinates(row["chrom"], int(row["start"]), int(row["end"]), strand, "l")[
-                1::2
-            ]
+
+            new_coords = self.mapper.map_coordinates(row["chrom"], int(row["start"]), int(row["end"]), strand, "l")
+            if new_coords is None:
+                self._handle_unmapped(f"base\t{row['chrom']}\t{row['start']}\t{row['end']}\t{strand}\n")
+                continue
+            new_coords = new_coords[1::2]
+
             new_row = {
                 "facets": row["facets"],
                 "misc": row["misc"],
@@ -68,6 +72,13 @@ class Experiment:
                     except:
                         self._handle_unmapped(f"base\t{row['chrom']}\t{row['start']}\t{row['end']}\t{strand}\n")
                         continue
+
+                    # Chromosome names longer than 10 chars aren't allowed in the database.
+                    # It's not technically unmapped, but may as well be
+                    if len(new_coords[0]) > 10:
+                        self._handle_unmapped(f"{row['chrom']}\t{row['start']}\t{row['end']}\t{strand}\n")
+                        continue
+
                     new_row.update(
                         {
                             "chrom": new_coords[0],
@@ -77,35 +88,53 @@ class Experiment:
                         }
                     )
 
-            p_strand = row["parent_strand"]
-            if p_strand == ".":
-                p_strand = "+"
-            new_parent_coords = self.mapper.map_coordinates(
-                row["parent_chrom"], int(row["parent_start"]), int(row["parent_end"]), p_strand, "l"
-            )[1::2]
-            match len(new_parent_coords):
-                case 0:
+            no_parent = False
+            if row["parent_chrom"] != "":
+                p_strand = row["parent_strand"]
+                if p_strand == ".":
+                    p_strand = "+"
+                new_parent_coords = self.mapper.map_coordinates(
+                    row["parent_chrom"], int(row["parent_start"]), int(row["parent_end"]), p_strand, "l"
+                )
+
+                if new_parent_coords is None:
                     self._handle_unmapped(
                         f"parent\t{row['parent_chrom']}\t{row['parent_start']}\t{row['parent_end']}\t{p_strand}\n"
                     )
-                case _:
-                    try:
-                        new_parent_coords = merge_mapping(new_parent_coords)
-                    except:
+                    continue
+
+                new_parent_coords = new_parent_coords[1::2]
+                match len(new_parent_coords):
+                    case 0:
                         self._handle_unmapped(
                             f"parent\t{row['parent_chrom']}\t{row['parent_start']}\t{row['parent_end']}\t{p_strand}\n"
                         )
-                        continue
-                    new_row.update(
-                        {
-                            "parent_chrom": new_parent_coords[0],
-                            "parent_start": new_parent_coords[1],
-                            "parent_end": new_parent_coords[2],
-                            "parent_strand": new_parent_coords[3] if row["parent_strand"] != "." else ".",
-                        }
-                    )
+                    case _:
+                        try:
+                            new_parent_coords = merge_mapping(new_parent_coords)
+                        except:
+                            self._handle_unmapped(
+                                f"parent\t{row['parent_chrom']}\t{row['parent_start']}\t{row['parent_end']}\t{p_strand}\n"
+                            )
+                            continue
 
-            if "chrom" in new_row and "parent_chrom" in new_row:
+                        # Chromosome names longer than 10 chars aren't allowed in the database.
+                        # It's not technically unmapped, but may as well be
+                        if len(new_parent_coords[0]) > 10:
+                            self._handle_unmapped(f"{row['chrom']}\t{row['start']}\t{row['end']}\t{strand}\n")
+                            continue
+                        new_row.update(
+                            {
+                                "parent_chrom": new_parent_coords[0],
+                                "parent_start": new_parent_coords[1],
+                                "parent_end": new_parent_coords[2],
+                                "parent_strand": new_parent_coords[3] if row["parent_strand"] != "." else ".",
+                            }
+                        )
+            else:
+                no_parent = True
+
+            if "chrom" in new_row and (no_parent or "parent_chrom" in new_row):
                 self.writer.writerow(new_row)
 
 
@@ -143,9 +172,14 @@ class Analysis:
             strand = row["strand"]
             if strand == ".":
                 strand = "+"
-            new_coords = self.mapper.map_coordinates(row["chrom"], int(row["start"]), int(row["end"]), strand, "l")[
-                1::2
-            ]
+
+            new_coords = self.mapper.map_coordinates(row["chrom"], int(row["start"]), int(row["end"]), strand, "l")
+
+            if new_coords is None:
+                self._handle_unmapped(f"{row['chrom']}\t{row['start']}\t{row['end']}\t{strand}\n")
+                continue
+
+            new_coords = new_coords[1::2]
 
             match len(new_coords):
                 case 0:
@@ -156,6 +190,13 @@ class Analysis:
                     except:
                         self._handle_unmapped(f"{row['chrom']}\t{row['start']}\t{row['end']}\t{strand}\n")
                         continue
+
+                    # Chromosome names longer than 10 chars aren't allowed in the database.
+                    # It's not technically unmapped, but may as well be
+                    if len(new_coords[0]) > 10:
+                        self._handle_unmapped(f"{row['chrom']}\t{row['start']}\t{row['end']}\t{strand}\n")
+                        continue
+
                     self.writer.writerow(
                         {
                             "chrom": new_coords[0],
@@ -195,6 +236,11 @@ def run(args):
         regions = Analysis(args.analysis, args.output, args.unmapped, mapper)
 
     regions.liftover()
+
+
+def run_cli():
+    args = get_args()
+    run(args)
 
 
 if __name__ == "__main__":
