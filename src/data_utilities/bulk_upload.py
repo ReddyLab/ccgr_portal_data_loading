@@ -201,10 +201,23 @@ class UploadSession:
             # Check the status until the upload is finished or errors out
             #
             statuses = set()
+            error_count = 0
             while True:
                 status_result = self.session.get(f"{self.status_url}{task_status_id}", params={"accept": JSON_MIME})
                 self._check_response_status(status_result)
-                status_result = status_result.json()
+                try:
+                    status_result = status_result.json()
+                except:
+                    print("************************")
+                    print("Status Error")
+                    print(status_result)
+                    print("************************")
+                    if error_count > 3:
+                        raise
+                    error_count += 1
+                    time.sleep(3)
+                    continue
+                error_count = 0
                 status = status_result["status"]
 
                 match status:
@@ -338,6 +351,8 @@ def read_compressed_list(metadata_file: str) -> list[Metadata]:
                 accession = next_accession(prev_accession)
 
             prev_accession = accession
+
+            print(f"accession: {accession}")
 
             metadata.append(Metadata(accession_id=accession, compressed_path=compressed_path))
 
