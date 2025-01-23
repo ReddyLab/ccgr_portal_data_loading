@@ -17,6 +17,14 @@ URLString: TypeAlias = str
 CSRFToken: TypeAlias = str
 
 
+def print_response(response, title=""):
+    print("************************")
+    print(title)
+    print(response.status_code, response.reason)
+    print(response.text[:600])
+    print("************************")
+
+
 def is_url(path: str):
     return path.startswith("https://") or path.startswith("http://")
 
@@ -79,15 +87,22 @@ class Metadata:
 class UploadSession:
     hostname: URLString
     login_url: URLString
+    logout_url: URLString
     upload_url: URLString
     status_url: URLString
 
-    def __init__(self, hostname):
+    def __init__(self, hostname, username, password):
         self.hostname = hostname
         self.login_url = f"{hostname}/accounts/login/"
+        self.logout_url = f"{hostname}/accounts/logout/"
         self.upload_url = f"{hostname}/uploads/"
         self.status_url = f"{hostname}/task_status/task/"
         self.session = None
+        self.username = username
+        self.password = password
+        self.login_csrf = None
+        self.upload_csrf = None
+        self.logout_csrf = None
 
     def __enter__(self):
         self.session = requests.Session()
@@ -99,148 +114,184 @@ class UploadSession:
 
         self.session.close()
 
+    def _retry_request(self, request, check_json=False):
+        response = None
+        for _ in range(3):
+            response = request()
+
+            if response.ok:
+                if check_json:
+                    try:
+                        status_result = response.json()
+                        return status_result
+                    except:
+                        # The log token doesn't last forever!
+                        if "Log In" in response.text:
+                            self.login()
+                else:
+                    return response
+
+            if response.status_code == 403:
+                self.login()
+
+            time.sleep(3)
+
+        print_response(response, "Request Error")
+        raise RuntimeError("Connection Error")
+
     def _check_response_status(self, response: requests.Response):
         if not response.ok:
             raise RuntimeError(f"Bad Response Code: {response.status_code} ({response.request.method} {response.url})")
 
-    def _get_login_csrf(self) -> CSRFToken:
+    def _get_login_csrf(self):
         if self.session is None:
             raise RuntimeError("Please use UploadSession as a Context Manager")
 
-        r = self.session.get(self.login_url)
-        self._check_response_status(r)
-        return r.cookies["csrftoken"]
+        if self.login_csrf is not None:
+            # There seems to be an issue where a user's session has expired, but they aren't
+            # actually logged out. This causes problems when trying to get a new login csrf token
+            # So we'll just make sure they are logged out.
+            logout_response = self._retry_request(lambda: self.session.get(self.logout_url))
+            search_result = re.search(r'name="csrfmiddlewaretoken" value="(.*)"', logout_response.text)
+            if search_result is not None:
+                self.logout_csrf = search_result.group(1)
+            else:
+                print_response(logout_response, "Logout CSRF Request Error")
 
-    def _get_upload_csrf(self) -> CSRFToken:
+            self.session.post(
+                self.logout_url,
+                data={
+                    "csrfmiddlewaretoken": self.logout_csrf,
+                },
+                headers={"Referer": self.logout_url},
+            )
+
+        response = self._retry_request(lambda: self.session.get(self.login_url))
+        search_result = re.search(r'name="csrfmiddlewaretoken" value="(.*)"', response.text)
+        if search_result is not None:
+            self.login_csrf = search_result.group(1)
+        else:
+            print_response(response, "Login CSRF Request Error")
+
+    def _get_upload_csrf(self):
         if self.session is None:
             raise RuntimeError("Please use UploadSession as a Context Manager")
 
-        r = self.session.get(self.upload_url)
-        self._check_response_status(r)
-        return r.cookies["csrftoken"]
+        response = self._retry_request(lambda: self.session.get(self.upload_url))
+        search_result = re.search(r'name="csrfmiddlewaretoken" value="(.*)"', response.text)
+        if search_result is not None:
+            self.upload_csrf = search_result.group(1)
+        else:
+            print_response(response, "Upload CSRF Request Error")
 
-    def login(self, username, password):
+    def login(self):
         if self.session is None:
             raise RuntimeError("Please use UploadSession as a Context Manager")
 
-        csrf_token = self._get_login_csrf()
+        self._get_login_csrf()
         login = self.session.post(
             self.login_url,
             data={
-                "csrfmiddlewaretoken": csrf_token,
-                "login": username,
-                "password": password,
+                "csrfmiddlewaretoken": self.login_csrf,
+                "login": self.username,
+                "password": self.password,
             },
             headers={"Referer": self.login_url},
         )
         self._check_response_status(login)
 
-    def upload(self, metadata: list[Metadata]):
+    def upload(self, metadatum: Metadata):
         if self.session is None:
             raise RuntimeError("Please use UploadSession as a Context Manager")
 
-        for metadatum in metadata:
-            csrf_token = self._get_upload_csrf()
-            print(f"Uploading {metadatum}")
-            data = {
-                "csrfmiddlewaretoken": csrf_token,
-                "accept": JSON_MIME,
-                "experiment_accession": metadatum.accession_id,
-            }
-            files = {}
+        self._get_upload_csrf()
+        print(f"Uploading {metadatum}")
+        data = {
+            "csrfmiddlewaretoken": self.upload_csrf,
+            "accept": JSON_MIME,
+            "experiment_accession": metadatum.accession_id,
+        }
+        files = {}
 
-            #
-            # Add the experiment and analysis metadata to the request as appropriate
-            #
-            if metadatum.experiment_metadata_file is not None:
-                if isinstance(metadatum.experiment_metadata_file, str):
-                    files["experiment_file"] = open(metadatum.experiment_metadata_file, encoding="utf-8")
+        #
+        # Add the experiment and analysis metadata to the request as appropriate
+        #
+        if metadatum.experiment_metadata_file is not None:
+            if isinstance(metadatum.experiment_metadata_file, str):
+                files["experiment_file"] = open(metadatum.experiment_metadata_file, encoding="utf-8")
 
-            if metadatum.experiment_metadata_url is not None:
-                if isinstance(metadatum.experiment_metadata_url, str):
-                    data["experiment_url"] = metadatum.experiment_metadata_url
+        if metadatum.experiment_metadata_url is not None:
+            if isinstance(metadatum.experiment_metadata_url, str):
+                data["experiment_url"] = metadatum.experiment_metadata_url
 
-            if metadatum.analysis_metadata_file is not None:
-                if isinstance(metadatum.analysis_metadata_file, str):
-                    files["analysis_file"] = open(metadatum.analysis_metadata_file, encoding="utf-8")
+        if metadatum.analysis_metadata_file is not None:
+            if isinstance(metadatum.analysis_metadata_file, str):
+                files["analysis_file"] = open(metadatum.analysis_metadata_file, encoding="utf-8")
 
-            if metadatum.analysis_metadata_url is not None:
-                if isinstance(metadatum.analysis_metadata_url, str):
-                    data["analysis_url"] = metadatum.analysis_metadata_url
+        if metadatum.analysis_metadata_url is not None:
+            if isinstance(metadatum.analysis_metadata_url, str):
+                data["analysis_url"] = metadatum.analysis_metadata_url
 
-            if metadatum.compressed_data_file is not None:
-                if isinstance(metadatum.compressed_data_file, str):
-                    files["full_file"] = open(metadatum.compressed_data_file, "rb")
+        if metadatum.compressed_data_file is not None:
+            if isinstance(metadatum.compressed_data_file, str):
+                files["full_file"] = open(metadatum.compressed_data_file, "rb")
 
-            if metadatum.compressed_data_url is not None:
-                if isinstance(metadatum.compressed_data_url, str):
-                    data["full_url"] = metadatum.compressed_data_url
+        if metadatum.compressed_data_url is not None:
+            if isinstance(metadatum.compressed_data_url, str):
+                data["full_url"] = metadatum.compressed_data_url
 
-            #
-            # Upload the metadata
-            #
-            upload = self.session.post(
-                self.upload_url,
-                data=data,
-                files=files,
-                headers={"Referer": self.login_url},
+        #
+        # Upload the metadata
+        #
+        upload_response = self._retry_request(
+            lambda: self.session.post(self.upload_url, data=data, files=files, headers={"Referer": self.login_url}),
+            check_json=True,
+        )
+
+        task_status_id = upload_response["task_status_id"]
+
+        if (file := files.get("experiment_file")) is not None:
+            file.close()
+        if (file := files.get("analysis_file")) is not None:
+            file.close()
+        if (file := files.get("full_file")) is not None:
+            file.close()
+
+        #
+        # Check the status until the upload is finished or errors out
+        #
+        status_url = self.status_url + task_status_id
+        print(f"Checking task status at {status_url}")
+        statuses = set()
+        while True:
+            status_result = self._retry_request(
+                lambda: self.session.get(status_url, params={"accept": JSON_MIME}),
+                check_json=True,
             )
-            self._check_response_status(upload)
-            result_json = upload.json()
 
-            task_status_id = result_json["task_status_id"]
+            status = status_result["status"]
 
-            if (file := files.get("experiment_file")) is not None:
-                file.close()
-            if (file := files.get("analysis_file")) is not None:
-                file.close()
-            if (file := files.get("full_file")) is not None:
-                file.close()
+            match status:
+                case "W":
+                    message = "Waiting to Start"
+                case "S":
+                    message = "Started"
+                case "F":
+                    message = "Finished Successfully"
+                case "E":
+                    message = f"Server Error: {status_result['error_message']}"
+                case _:
+                    raise ValueError(f'Unknown status "{status}"')
 
-            #
-            # Check the status until the upload is finished or errors out
-            #
-            statuses = set()
-            error_count = 0
-            while True:
-                status_result = self.session.get(f"{self.status_url}{task_status_id}", params={"accept": JSON_MIME})
-                self._check_response_status(status_result)
-                try:
-                    status_result = status_result.json()
-                except:
-                    print("************************")
-                    print("Status Error")
-                    print(status_result)
-                    print("************************")
-                    if error_count > 3:
-                        raise
-                    error_count += 1
+            if status not in statuses:
+                print(message)
+                statuses.add(status)
+
+            match status:
+                case "F" | "E":
+                    break
+                case _:
                     time.sleep(3)
-                    continue
-                error_count = 0
-                status = status_result["status"]
-
-                match status:
-                    case "W":
-                        message = "Waiting to Start"
-                    case "S":
-                        message = "Started"
-                    case "F":
-                        message = "Finished Successfully"
-                    case "E":
-                        message = f"Server Error: {status_result['error_message']}"
-                    case _:
-                        raise ValueError(f'Unknown status "{status}"')
-
-                if status not in statuses:
-                    print(message)
-                    statuses.add(status)
-
-                match status:
-                    case "F" | "E":
-                        break
-                    case _:
-                        time.sleep(3)
 
 
 def full_hostname(hostname: str) -> URLString:
@@ -420,9 +471,10 @@ def main(args: argparse.Namespace):
     host = full_hostname(args.host)
     metadata = get_metadata(args)
 
-    with UploadSession(host) as session:
-        session.login(args.username, args.password)
-        session.upload(metadata)
+    for metadatum in metadata:
+        with UploadSession(host, args.username, args.password) as session:
+            session.login()
+            session.upload(metadatum)
 
 
 def run_cli():
