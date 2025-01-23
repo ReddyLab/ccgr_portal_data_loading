@@ -24,7 +24,7 @@ ccgr_lo = "data_utilities.liftover:run_cli"
 where = ["src"]
 
 [tool.setuptools.package-data]
-data_utilities = ["*.schema.json"]
+data_utilities = ["*.schema.json", "hg38_genes.tsv"]
 
 [tool.pytest.ini_options]
 addopts = ["--import-mode=importlib"]
