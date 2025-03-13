@@ -78,6 +78,7 @@
         },
         "filename": { "type": "string" },
         "file_location": { "type": "string" },
+        "url": { "type": "string" },
         "genome_assembly": {
           "type": "string",
           "enum": ["hg19", "hg38"]

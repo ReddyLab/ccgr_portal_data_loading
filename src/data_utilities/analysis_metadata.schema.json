@@ -30,7 +30,8 @@
           "type": "string"
         },
         "filename": { "type": "string" },
-        "file_location": { "type": "string" }
+        "file_location": { "type": "string" },
+        "url": { "type": "string" }
       }
     }
   }
